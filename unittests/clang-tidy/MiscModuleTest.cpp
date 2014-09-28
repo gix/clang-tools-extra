@@ -1,0 +1,54 @@
+#include "ClangTidyTest.h"
+#include "misc/ArgumentCommentCheck.h"
+#include "misc/QualifiersOrder.h"
+#include "gtest/gtest.h"
+
+namespace clang {
+namespace tidy {
+namespace test {
+
+#define EXPECT_NO_CHANGES(Check, Code)                                         \
+  EXPECT_EQ(Code, runCheckOnCode<Check>(Code))
+
+TEST(ArgumentCommentCheckTest, CorrectComments) {
+  EXPECT_NO_CHANGES(ArgumentCommentCheck,
+                    "void f(int x, int y); void g() { f(/*x=*/0, /*y=*/0); }");
+  EXPECT_NO_CHANGES(ArgumentCommentCheck,
+                    "struct C { C(int x, int y); }; C c(/*x=*/0, /*y=*/0);");
+}
+
+TEST(ArgumentCommentCheckTest, ThisEditDistanceAboveThreshold) {
+  EXPECT_NO_CHANGES(ArgumentCommentCheck,
+                    "void f(int xxx); void g() { f(/*xyz=*/0); }");
+}
+
+TEST(ArgumentCommentCheckTest, OtherEditDistanceAboveThreshold) {
+  EXPECT_EQ("void f(int xxx, int yyy); void g() { f(/*xxx=*/0, 0); }",
+            runCheckOnCode<ArgumentCommentCheck>(
+                "void f(int xxx, int yyy); void g() { f(/*Xxx=*/0, 0); }"));
+  EXPECT_EQ("struct C { C(int xxx, int yyy); }; C c(/*xxx=*/0, 0);",
+            runCheckOnCode<ArgumentCommentCheck>(
+                "struct C { C(int xxx, int yyy); }; C c(/*Xxx=*/0, 0);"));
+}
+
+TEST(ArgumentCommentCheckTest, OtherEditDistanceBelowThreshold) {
+  EXPECT_NO_CHANGES(ArgumentCommentCheck,
+                    "void f(int xxx, int yyy); void g() { f(/*xxy=*/0, 0); }");
+}
+
+TEST(QualifiersOrderTest, Basic) {
+  EXPECT_NO_CHANGES(QualifiersOrder, "int i;\n"
+                                       "const int ci = 0;\n"
+                                       "int const ic = 0;\n"
+                                       "int *ip;\n"
+                                       "const int *cip;\n" // F
+                                       "int const *icp;\n" // F
+                                       "int &ir = i;\n"
+                                       "const int &cir = ci;\n" // F
+                                       "int const &icr = ic;\n" // F
+                                       );
+}
+
+} // namespace test
+} // namespace tidy
+} // namespace clang

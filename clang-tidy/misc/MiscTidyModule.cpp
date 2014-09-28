@@ -15,6 +15,7 @@
 #include "NewDeleteOverloadsCheck.h"
 #include "NonCopyableObjects.h"
 #include "NonPrivateMemberVariablesInClassesCheck.h"
+#include "QualifiersOrder.h"
 #include "RedundantExpressionCheck.h"
 #include "StaticAssertCheck.h"
 #include "ThrowByValueCatchByReferenceCheck.h"
@@ -40,6 +41,8 @@ public:
         "misc-non-copyable-objects");
     CheckFactories.registerCheck<NonPrivateMemberVariablesInClassesCheck>(
         "misc-non-private-member-variables-in-classes");
+    CheckFactories.registerCheck<QualifiersOrder>(
+        "misc-qualifiers-order");
     CheckFactories.registerCheck<RedundantExpressionCheck>(
         "misc-redundant-expression");
     CheckFactories.registerCheck<StaticAssertCheck>("misc-static-assert");
