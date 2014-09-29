@@ -18,10 +18,17 @@ namespace tidy {
 /// \brief Order (before/after type) of 'const' ('restrict' and 'volatile'?) qualifiers
 class QualifiersOrder: public ClangTidyCheck {
 public:
-  QualifiersOrder(StringRef Name, ClangTidyContext *Context)
-      : ClangTidyCheck(Name, Context) {}
+  QualifiersOrder(StringRef Name, ClangTidyContext *Context);
+  void storeOptions(ClangTidyOptions::OptionMap &Opts) override;
   void registerMatchers(ast_matchers::MatchFinder *Finder) override;
   void check(const ast_matchers::MatchFinder::MatchResult &Result) override;
+
+private:
+  enum QualifierAlignmentStyle {
+    QAS_Left,
+    QAS_Right
+  };
+  QualifierAlignmentStyle QualifierAlignment;
 };
 
 } // namespace tidy
