@@ -11,8 +11,32 @@
 #include "clang/AST/ASTContext.h"
 #include "clang/ASTMatchers/ASTMatchFinder.h"
 #include "clang/Lex/Lexer.h"
+#include "llvm/Support/YAMLTraits.h"
+#include <sstream>
 
 using namespace clang::ast_matchers;
+using clang::tidy::QualifiersOrder;
+
+namespace llvm {
+namespace yaml {
+template <>
+struct ScalarEnumerationTraits<QualifiersOrder::QualifierAlignmentStyle> {
+  static void
+  enumeration(IO &IO, QualifiersOrder::QualifierAlignmentStyle &Value) {
+    IO.enumCase(Value, "None", QualifiersOrder::QAS_None);
+    IO.enumCase(Value, "Left", QualifiersOrder::QAS_Left);
+    IO.enumCase(Value, "Right", QualifiersOrder::QAS_Right);
+  }
+};
+
+template <> struct MappingTraits<QualifiersOrder> {
+  static void mapping(IO &IO, QualifiersOrder &Check) {
+    IO.mapOptional("QualifierAlignment", Check.QualifierAlignment);
+  }
+};
+
+} // namespace yaml
+} // namespace llvm
 
 namespace clang {
 namespace ast_matchers {
@@ -40,7 +64,7 @@ tok::TokenKind getTokenKind(SourceLocation Loc, const SourceManager &SM,
 }
 
 SourceLocation
-backwardSkipWhitespacesAndComments(const SourceManager &SM,
+backwardSkipWhitespaceAndComments(const SourceManager &SM,
                                    const clang::ASTContext *Context,
                                    SourceLocation Loc) {
   for (;;) {
@@ -60,7 +84,7 @@ backwardSkipWhitespacesAndComments(const SourceManager &SM,
 }
 
 SourceLocation
-forwardSkipWhitespacesAndComments(const SourceManager &SM,
+forwardSkipWhitespaceAndComments(const SourceManager &SM,
                                   const clang::ASTContext *Context,
                                   SourceLocation Loc) {
   for (;;) {
@@ -113,11 +137,37 @@ SourceRange findToken(const SourceManager &SM, const clang::ASTContext *Context,
 
 } // end anonymous namespace
 
+template <typename T>
+std::string QualifiersOrder::getYamlInput(llvm::StringRef LocalName, T Default) {
+  std::stringstream Ss;
+  Ss << "{" << LocalName.str() << ": " << Options.get(LocalName, Default) << "}";
+  return  Ss.str();
+}
+
 QualifiersOrder::QualifiersOrder(StringRef Name, ClangTidyContext *Context)
     : ClangTidyCheck(Name, Context) {
-  StringRef QualifierAlignmentString = Options.get("QualifierAlignment", "Left");
-  QualifierAlignment =
-      QualifierAlignmentString.equals_lower("right") ? QAS_Right : QAS_Left;
+  // QualifierAlignment =
+  // Options.get<QualifierAlignmentStyle>("QualifierAlignment", QAS_Left);
+
+  //llvm::yaml::Input Input{getYamlInput("QualifierAlignment", "Left")};
+  //Input >> *this;
+  //if (Input.error()) {
+  //  return; // TODO(mkurdej): error handling
+  //}
+
+  std::string QualifierAlignmentString =
+      Options.get("QualifierAlignment", "Left");
+  QualifierAlignment = StringRef(QualifierAlignmentString).equals_lower("right")
+                           ? QAS_Right
+                           : QAS_Left;
+}
+
+void QualifiersOrder::storeOptions(ClangTidyOptions::OptionMap &Opts) {
+  //Options.store(Opts, "QualifierAlignment", QualifierAlignment);
+  Options.store(Opts, "QualifierAlignment",
+                QualifierAlignment == QAS_Right ? "Right" : "Left");
+
+  // TODO: QualifierOrder: CRV|CVR|RCV|RVC|VCR|VRC
 }
 
 void QualifiersOrder::registerMatchers(MatchFinder *Finder) {
@@ -130,12 +180,6 @@ void QualifiersOrder::registerMatchers(MatchFinder *Finder) {
   // TODO(mkurdej): declarations in if/for/while: ?Stmt()
   // TODO(mkurdej): function/method arguments: functionDecl
   // TODO(mkurdej): typedefs typedefType()
-}
-
-void QualifiersOrder::storeOptions(ClangTidyOptions::OptionMap &Opts) {
-  Options.store(Opts, "QualifierAlignment",
-                QualifierAlignment == QAS_Right ? "Right" : "Left");
-  // TODO: QualifierOrder: CRV|CVR|RCV|RVC|VCR|VRC
 }
 
 void QualifiersOrder::check(const MatchFinder::MatchResult &Result) {
@@ -208,7 +252,7 @@ void QualifiersOrder::check(const MatchFinder::MatchResult &Result) {
   VarNameLoc = Lexer::GetBeginningOfToken(VarNameLoc.getLocWithOffset(-1), SM,
                                           Context->getLangOpts());
   VarNameLoc = VarNameLoc.getLocWithOffset(1);
-  VarNameLoc = backwardSkipWhitespacesAndComments(SM, Context, VarNameLoc);
+  VarNameLoc = backwardSkipWhitespaceAndComments(SM, Context, VarNameLoc);
 
   SourceRange ReplacementRange(SR.getBegin(), VarNameLoc);
   const std::string TypeString = VarType.getAsString();

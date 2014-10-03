@@ -11,6 +11,7 @@
 #define LLVM_CLANG_TOOLS_EXTRA_CLANG_TIDY_MISC_CV_QUALIFIERS_ORDER_H
 
 #include "../ClangTidy.h"
+#include "llvm/Support/YAMLTraits.h"
 
 namespace clang {
 namespace tidy {
@@ -23,11 +24,25 @@ public:
   void registerMatchers(ast_matchers::MatchFinder *Finder) override;
   void check(const ast_matchers::MatchFinder::MatchResult &Result) override;
 
-private:
-  enum QualifierAlignmentStyle {
+public:
+  /// Defines the placement/alignment of CVR qualifiers
+  enum /*class*/ QualifierAlignmentStyle {
+    /// Leave qualifiers as they are (useful if only sorting is needed)
+    // TODO(mkurdej): implement qualifier sorting
+    QAS_None,
+    /// Put qualifiers on the left side of (before) the type
     QAS_Left,
+    /// Put qualifiers on the right side of (behind) the type
     QAS_Right
   };
+
+private:
+  template <typename T>
+  std::string getYamlInput(llvm::StringRef LocalName,
+                                            T Default);
+
+private:
+  friend struct llvm::yaml::MappingTraits<QualifiersOrder>;
   QualifierAlignmentStyle QualifierAlignment;
 };
 
