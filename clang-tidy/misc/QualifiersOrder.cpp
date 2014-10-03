@@ -15,23 +15,24 @@
 #include <sstream>
 
 using namespace clang::ast_matchers;
-using clang::tidy::QualifiersOrder;
+using clang::tidy::QualifiersOrderOptions;
 
 namespace llvm {
 namespace yaml {
 template <>
-struct ScalarEnumerationTraits<QualifiersOrder::QualifierAlignmentStyle> {
+struct ScalarEnumerationTraits<
+    QualifiersOrderOptions::QualifierAlignmentStyle> {
   static void
-  enumeration(IO &IO, QualifiersOrder::QualifierAlignmentStyle &Value) {
-    IO.enumCase(Value, "None", QualifiersOrder::QAS_None);
-    IO.enumCase(Value, "Left", QualifiersOrder::QAS_Left);
-    IO.enumCase(Value, "Right", QualifiersOrder::QAS_Right);
+  enumeration(IO &IO, QualifiersOrderOptions::QualifierAlignmentStyle &Value) {
+    IO.enumCase(Value, "None", QualifiersOrderOptions::QAS_None);
+    IO.enumCase(Value, "Left", QualifiersOrderOptions::QAS_Left);
+    IO.enumCase(Value, "Right", QualifiersOrderOptions::QAS_Right);
   }
 };
 
-template <> struct MappingTraits<QualifiersOrder> {
-  static void mapping(IO &IO, QualifiersOrder &Check) {
-    IO.mapOptional("QualifierAlignment", Check.QualifierAlignment);
+template <> struct MappingTraits<QualifiersOrderOptions> {
+  static void mapping(IO &IO, QualifiersOrderOptions &Style) {
+    IO.mapOptional("QualifierAlignment", Style.QualifierAlignment);
   }
 };
 
@@ -155,6 +156,8 @@ QualifiersOrder::QualifiersOrder(StringRef Name, ClangTidyContext *Context)
   //  return; // TODO(mkurdej): error handling
   //}
 
+  Style = Options.get("QualifierAlignment", QualifiersOrderOptions());
+
   std::string QualifierAlignmentString =
       Options.get("QualifierAlignment", "Left");
   QualifierAlignment = StringRef(QualifierAlignmentString).equals_lower("right")
@@ -163,6 +166,7 @@ QualifiersOrder::QualifiersOrder(StringRef Name, ClangTidyContext *Context)
 }
 
 void QualifiersOrder::storeOptions(ClangTidyOptions::OptionMap &Opts) {
+  //Options.store("Options", Style);
   //Options.store(Opts, "QualifierAlignment", QualifierAlignment);
   Options.store(Opts, "QualifierAlignment",
                 QualifierAlignment == QAS_Right ? "Right" : "Left");

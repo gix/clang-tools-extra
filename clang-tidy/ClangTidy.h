@@ -90,6 +90,25 @@ public:
     return Result;
   }
 
+  template <typename T>
+  typename std::enable_if<!std::is_integral<T>::value &&
+                              !std::is_convertible<T, std::string>::value,
+                          T>::type
+  get(StringRef LocalName, T Default) const {
+    std::string Value = get(LocalName, "");
+    T Result = Default;
+    if (!Value.empty()) {
+      std::stringstream Stream;
+      Stream << "{" << LocalName.str() << ": " << Value << "}";
+      std::string Text = Stream.str();
+      llvm::yaml::Input Input(Text);
+      Input >> Result;
+      if (Input.error())
+        Result = Default;
+    }
+    return Result;
+  }
+
   /// \brief Stores an option with the check-local name \p LocalName with string
   /// value \p Value to \p Options.
   void store(ClangTidyOptions::OptionMap &Options, StringRef LocalName,
