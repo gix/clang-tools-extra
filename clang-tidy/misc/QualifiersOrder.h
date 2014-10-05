@@ -16,23 +16,6 @@
 namespace clang {
 namespace tidy {
 
-struct QualifiersOrderOptions {
-  QualifiersOrderOptions() : QualifierAlignment(QAS_Left) {}
-
-  /// Defines the placement/alignment of CVR qualifiers
-  enum /*class*/ QualifierAlignmentStyle {
-    /// Leave qualifiers as they are (useful if only sorting is needed)
-    // TODO(mkurdej): implement qualifier sorting
-    QAS_None,
-    /// Put qualifiers on the left side of (before) the type
-    QAS_Left,
-    /// Put qualifiers on the right side of (behind) the type
-    QAS_Right
-  };
-
-  QualifierAlignmentStyle QualifierAlignment;
-};
-
 /// \brief Order (before/after type) of 'const' ('restrict' and 'volatile'?) qualifiers
 class QualifiersOrder: public ClangTidyCheck {
 public:
@@ -54,13 +37,8 @@ public:
   };
 
 private:
-  template <typename T>
-  std::string getYamlInput(llvm::StringRef LocalName, T Default);
-
-private:
   friend struct llvm::yaml::MappingTraits<QualifiersOrder>;
   QualifierAlignmentStyle QualifierAlignment;
-  QualifiersOrderOptions Style;
 };
 
 } // namespace tidy

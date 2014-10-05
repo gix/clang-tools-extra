@@ -98,11 +98,12 @@ public:
     std::string Value = get(LocalName, "");
     T Result = Default;
     if (!Value.empty()) {
-      std::stringstream Stream;
-      Stream << "{" << LocalName.str() << ": " << Value << "}";
-      std::string Text = Stream.str();
-      llvm::yaml::Input Input(Text);
-      Input >> Result;
+      std::stringstream Content;
+      // Should we quote key and value?
+      Content << LocalName.str() << ": " << Value;
+      llvm::yaml::Input Input(Content.str());
+      Input.setCurrentDocument();
+      Input.mapOptional(LocalName.data(), Result);
       if (Input.error())
         Result = Default;
     }
@@ -118,6 +119,29 @@ public:
   /// ``int64_t`` value \p Value to \p Options.
   void store(ClangTidyOptions::OptionMap &Options, StringRef LocalName,
              int64_t Value) const;
+
+  template <typename T>
+  typename std::enable_if<!std::is_integral<T>::value &&
+                              !std::is_convertible<T, std::string>::value,
+                          void>::type
+  store(ClangTidyOptions::OptionMap &Options, StringRef LocalName,
+        T Value) const {
+    std::string Text;
+    llvm::raw_string_ostream Content(Text);
+    llvm::yaml::Output Output(Content);
+    Output.beginMapping();
+    if (Output.preflightDocument(0))
+      Output.mapOptional(LocalName.data(), Value);
+    Output.endMapping();
+
+    auto T = Content.str();
+    // Skip past ": " between key and value.
+    auto Off = T.find(':', LocalName.size());
+    assert(Off != std::string::npos);
+    T = T.substr(Off + 2, std::string::npos);
+    // FIXME(mkurdej): Strip enclosing apostrophes "'" if present.
+    Options[NamePrefix + LocalName.str()] = T;
+  }
 
 private:
   std::string NamePrefix;

@@ -15,27 +15,19 @@
 #include <sstream>
 
 using namespace clang::ast_matchers;
-using clang::tidy::QualifiersOrderOptions;
+using clang::tidy::QualifiersOrder;
 
 namespace llvm {
 namespace yaml {
 template <>
-struct ScalarEnumerationTraits<
-    QualifiersOrderOptions::QualifierAlignmentStyle> {
-  static void
-  enumeration(IO &IO, QualifiersOrderOptions::QualifierAlignmentStyle &Value) {
-    IO.enumCase(Value, "None", QualifiersOrderOptions::QAS_None);
-    IO.enumCase(Value, "Left", QualifiersOrderOptions::QAS_Left);
-    IO.enumCase(Value, "Right", QualifiersOrderOptions::QAS_Right);
+struct ScalarEnumerationTraits<QualifiersOrder::QualifierAlignmentStyle> {
+  static void enumeration(IO &IO,
+                          QualifiersOrder::QualifierAlignmentStyle &Value) {
+    IO.enumCase(Value, "None", QualifiersOrder::QAS_None);
+    IO.enumCase(Value, "Left", QualifiersOrder::QAS_Left);
+    IO.enumCase(Value, "Right", QualifiersOrder::QAS_Right);
   }
 };
-
-template <> struct MappingTraits<QualifiersOrderOptions> {
-  static void mapping(IO &IO, QualifiersOrderOptions &Style) {
-    IO.mapOptional("QualifierAlignment", Style.QualifierAlignment);
-  }
-};
-
 } // namespace yaml
 } // namespace llvm
 
@@ -138,39 +130,12 @@ SourceRange findToken(const SourceManager &SM, const clang::ASTContext *Context,
 
 } // end anonymous namespace
 
-template <typename T>
-std::string QualifiersOrder::getYamlInput(llvm::StringRef LocalName, T Default) {
-  std::stringstream Ss;
-  Ss << "{" << LocalName.str() << ": " << Options.get(LocalName, Default) << "}";
-  return  Ss.str();
-}
-
 QualifiersOrder::QualifiersOrder(StringRef Name, ClangTidyContext *Context)
-    : ClangTidyCheck(Name, Context) {
-  // QualifierAlignment =
-  // Options.get<QualifierAlignmentStyle>("QualifierAlignment", QAS_Left);
-
-  //llvm::yaml::Input Input{getYamlInput("QualifierAlignment", "Left")};
-  //Input >> *this;
-  //if (Input.error()) {
-  //  return; // TODO(mkurdej): error handling
-  //}
-
-  Style = Options.get("QualifierAlignment", QualifiersOrderOptions());
-
-  std::string QualifierAlignmentString =
-      Options.get("QualifierAlignment", "Left");
-  QualifierAlignment = StringRef(QualifierAlignmentString).equals_lower("right")
-                           ? QAS_Right
-                           : QAS_Left;
-}
+    : ClangTidyCheck(Name, Context),
+      QualifierAlignment(Options.get("QualifierAlignment", QAS_Left)) {}
 
 void QualifiersOrder::storeOptions(ClangTidyOptions::OptionMap &Opts) {
-  //Options.store("Options", Style);
-  //Options.store(Opts, "QualifierAlignment", QualifierAlignment);
-  Options.store(Opts, "QualifierAlignment",
-                QualifierAlignment == QAS_Right ? "Right" : "Left");
-
+  Options.store(Opts, "QualifierAlignment", QualifierAlignment);
   // TODO: QualifierOrder: CRV|CVR|RCV|RVC|VCR|VRC
 }
 
