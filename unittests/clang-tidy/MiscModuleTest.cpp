@@ -44,10 +44,19 @@ TEST(QualifiersOrderTest, Basic) {
   EXPECT_NO_CHANGES(QualifiersOrder, "int  * ip;");
   EXPECT_NO_CHANGES(QualifiersOrder, "int i; int &ir = i;");
   EXPECT_NO_CHANGES(QualifiersOrder, "/*const*/ const int i = 0;");
-  EXPECT_EQ("const int /*const*/ i = 0;",
-            runCheckOnCode<QualifiersOrder>("int /*const*/ const i = 0;"));
+  EXPECT_EQ("const   int /*const*/ i = 0;",
+            runCheckOnCode<QualifiersOrder>("int /*const*/ const   i = 0;"));
   EXPECT_NO_CHANGES(QualifiersOrder, "const int ci = 0;");
   EXPECT_NO_CHANGES(QualifiersOrder, "const /**/ int ci = 0;");
+#if 0
+  // This check does not work for macros yet.
+  EXPECT_NO_CHANGES(QualifiersOrder, "#define CONST const\n"
+                                     "CONST /**/ int ci = 0;");
+  EXPECT_EQ("#define CONST const\n"
+            "CONST int /**/ ci = 0;",
+            runCheckOnCode<QualifiersOrder>("#define CONST const\n"
+                                            "int CONST /**/ ci = 0;"));
+#endif
   EXPECT_EQ("const int ic = 0;\n",
             runCheckOnCode<QualifiersOrder>("int const ic = 0;\n"));
   EXPECT_EQ("typedef int foo;\n"
@@ -66,6 +75,9 @@ TEST(QualifiersOrderTest, Basic) {
             "const auto ic = 0;\n",
             runCheckOnCode<QualifiersOrder>("const auto ci = 0;\n"
                                             "auto const ic = 0;\n"));
+}
+
+TEST(QualifiersOrderTest, TemplatesBasic) {
   EXPECT_EQ(
       "template <typename T> class C {};\n"
       "const C<int> cCi = {};\n"
@@ -87,6 +99,8 @@ TEST(QualifiersOrderTest, Basic) {
 
 TEST(QualifiersOrderTest, Pointers) {
   EXPECT_NO_CHANGES(QualifiersOrder, "const int *cip;\n");
+  EXPECT_NO_CHANGES(QualifiersOrder, "const volatile int *cip;\n");
+  //EXPECT_NO_CHANGES(QualifiersOrder, "volatile const int *cip;\n");
   EXPECT_EQ("const int *cip;\n",
             runCheckOnCode<QualifiersOrder>("int const *cip;\n"));
   EXPECT_NO_CHANGES(QualifiersOrder, "int *const cip = nullptr;\n");
@@ -97,6 +111,27 @@ TEST(QualifiersOrderTest, Pointers) {
       runCheckOnCode<QualifiersOrder>("int *const ipc = nullptr;\n"
                                       "const int *const cipc = nullptr;\n"
                                       "int const *const icpc = nullptr;\n"));
+}
+TEST(QualifiersOrderTest, TemplatesPointers) {
+  EXPECT_NO_CHANGES(QualifiersOrder, "template <typename T> class C {};\n"
+                                     "const C<int> *cCi = {};\n"
+                                     "const C<const int> *cCci = {};\n");
+  EXPECT_EQ(
+      "template <typename T> class C {};\n"
+      "const C<int> *Ci_c = {};\n"
+      "const C<const int> *Cci_c = {};\n",
+      runCheckOnCode<QualifiersOrder>("template <typename T> class C {};\n"
+                                      "C<int> const *Ci_c = {};\n"
+                                      "C<const int> const *Cci_c = {};\n"));
+  EXPECT_EQ(
+      "template <typename T> class C {};\n"
+      //"const C<const int> *cCic = {};\n"
+      //"const C<const int> *Cic_c = {};\n"
+      ,
+      runCheckOnCode<QualifiersOrder>("template <typename T> class C {};\n"
+                                      //"const C<int const> *cCic = {};\n"
+                                      //"C<int const> const *Cic_c = {};\n"
+                                      ));
 }
 
 //TEST(QualifiersOrderTest, References) {
