@@ -39,6 +39,12 @@ TEST(ArgumentCommentCheckTest, OtherEditDistanceBelowThreshold) {
                     "void f(int xxx, int yyy); void g() { f(/*xxy=*/0, 0); }");
 }
 
+TEST(QualifiersOrderTest, CVROrder) {
+  EXPECT_NO_CHANGES(QualifiersOrder, "const volatile int i = 0;");
+  //EXPECT_NO_CHANGES(QualifiersOrder, "int const volatile i = 0;");
+  EXPECT_NO_CHANGES(QualifiersOrder, "int *const volatile __restrict i = nullptr;");
+}
+
 TEST(QualifiersOrderTest, Basic) {
   EXPECT_NO_CHANGES(QualifiersOrder, "int /**/ i;");
   EXPECT_NO_CHANGES(QualifiersOrder, "int  * ip;");
@@ -104,15 +110,23 @@ TEST(QualifiersOrderTest, Pointers) {
   EXPECT_EQ("const int *cip;\n",
             runCheckOnCode<QualifiersOrder>("int const *cip;\n"));
   EXPECT_NO_CHANGES(QualifiersOrder, "int *const cip = nullptr;\n");
+  EXPECT_NO_CHANGES(QualifiersOrder, "int *const ipc = nullptr;");
+  EXPECT_NO_CHANGES(QualifiersOrder, "const int *const cipc = nullptr;");
   EXPECT_EQ(
-      "int *const ipc = nullptr;\n"
-      "const int *const cipc = nullptr;\n"
-      "const int *const icpc = nullptr;\n",
-      runCheckOnCode<QualifiersOrder>("int *const ipc = nullptr;\n"
-                                      "const int *const cipc = nullptr;\n"
-                                      "int const *const icpc = nullptr;\n"));
+      "const int *const icpc = nullptr;",
+      runCheckOnCode<QualifiersOrder>("int const *const icpc = nullptr;"));
 }
-TEST(QualifiersOrderTest, TemplatesPointers) {
+
+TEST(QualifiersOrderTest, References) {
+  EXPECT_NO_CHANGES(QualifiersOrder, "int i = 0;\n"
+                                     "const int &cir = i;\n");
+  EXPECT_EQ("int i = 0;\n"
+            "const int &icr = i;",
+            runCheckOnCode<QualifiersOrder>("int i = 0;\n"
+                                            "int const &icr = i;"));
+}
+
+TEST(QualifiersOrderTest, TemplatePointers) {
   EXPECT_NO_CHANGES(QualifiersOrder, "template <typename T> class C {};\n"
                                      "const C<int> *cCi = {};\n"
                                      "const C<const int> *cCci = {};\n");
@@ -123,6 +137,28 @@ TEST(QualifiersOrderTest, TemplatesPointers) {
       runCheckOnCode<QualifiersOrder>("template <typename T> class C {};\n"
                                       "C<int> const *Ci_c = {};\n"
                                       "C<const int> const *Cci_c = {};\n"));
+}
+
+TEST(QualifiersOrderTest, TemplateReferences) {
+  EXPECT_NO_CHANGES(QualifiersOrder, "template <typename T> class C {};\n"
+                                     "C<int> Ci = {};\n"
+                                     "const C<int> &cCi = C;\n"
+                                     "C<const int> Cci = {};\n"
+                                     "const C<const int> &cCci = Cci;\n");
+  EXPECT_EQ(
+      "template <typename T> class C {};\n"
+      "C<int> Ci = {};\n"
+      "const C<int> &Ci_c = Ci;\n"
+      "C<const int> Cci = {};\n"
+      "const C<const int> &Cci_c = Cci;\n",
+      runCheckOnCode<QualifiersOrder>("template <typename T> class C {};\n"
+                                      "C<int> Ci = {};\n"
+                                      "C<int> const &Ci_c = Ci;\n"
+                                      "C<const int> Cci = {};\n"
+                                      "C<const int> const &Cci_c = Cci;\n"));
+}
+
+TEST(QualifiersOrderTest, TemplateArguments) {
   EXPECT_EQ(
       "template <typename T> class C {};\n"
       //"const C<const int> *cCic = {};\n"
@@ -134,16 +170,7 @@ TEST(QualifiersOrderTest, TemplatesPointers) {
                                       ));
 }
 
-//TEST(QualifiersOrderTest, References) {
-//  EXPECT_NO_CHANGES(QualifiersOrder, "int i = 0;\n"
-//                                     "const int &cir = i;\n");
-//  EXPECT_EQ("int i = 0;\n"
-//            "const int &icr = i;",
-//            runCheckOnCode<QualifiersOrder>("int i = 0;\n"
-//                                            "int const &icr = i;"));
-//}
-
-// TODO(mkurdej): template <typename T> struct C {}; C<const int> const Ccic; C<int const> const Cicc;
+// TODO(mkurdej): template <typename T> struct C {}; C<const int>::type const Ccic;
 
 } // namespace test
 } // namespace tidy

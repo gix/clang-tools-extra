@@ -160,13 +160,21 @@ SourceRange getRangeBeforeType(const SourceManager & /*SM*/,
                                const VarDecl *Var) {
   TypeSourceInfo *TSI = Var->getTypeSourceInfo();
   TypeLoc TL = TSI->getTypeLoc();
+  auto TLClass = TL.getTypeLocClass(); // TEMP
+
+  UnqualTypeLoc UTL = TL.getUnqualifiedLoc();
+  auto UTLClass = UTL.getTypeLocClass(); // TEMP
+
+  SourceRange USR = UTL.getSourceRange();
   SourceRange SR = TL.getSourceRange();
   SourceRange LSR = TL.getLocalSourceRange();
 
-  if (LSR.isValid())
-    return SourceRange(Var->getLocStart(), LSR.getBegin());
-  else
+  if (false) {
+    if (LSR.isValid())
+      return SourceRange(Var->getLocStart(), LSR.getBegin());
     return SourceRange(Var->getLocStart(), SR.getBegin());
+  }
+  return SourceRange(Var->getLocStart(), USR.getBegin());
 }
 
 SourceRange getRangeAfterType(const SourceManager &SM,
@@ -174,11 +182,55 @@ SourceRange getRangeAfterType(const SourceManager &SM,
   SourceLocation VarNameLoc = Var->getLocation();
   VarNameLoc = Lexer::GetBeginningOfToken(VarNameLoc.getLocWithOffset(-1), SM,
                                           Context->getLangOpts());
-  // FIXME: can be inside SR (skip type or search from right)
   TypeSourceInfo *TSI = Var->getTypeSourceInfo();
   TypeLoc TL = TSI->getTypeLoc();
+
+  // Find end location: before variable name or before the first '*' or '&'.
+  SourceLocation EndLoc = VarNameLoc;
+  for (;;) {
+    auto TLClass = TL.getTypeLocClass(); // TEMP
+    auto PTL = TL.getAs<PointerTypeLoc>();
+    if (!PTL.isNull()) {
+      TL = PTL.getPointeeLoc();
+
+      EndLoc = PTL.getSigilLoc().getLocWithOffset(-1);
+      continue;
+    }
+
+    auto RTL = TL.getAs<ReferenceTypeLoc>();
+    if (!RTL.isNull()) {
+      TL = RTL.getPointeeLoc();
+      EndLoc = RTL.getSigilLoc().getLocWithOffset(-1);
+      continue;
+    }
+    break;
+  }
+  auto TLClass = TL.getTypeLocClass(); // TEMP
+  UnqualTypeLoc UTL = TL.getUnqualifiedLoc();
+  auto UTLClass = UTL.getTypeLocClass(); // TEMP
+
+  // Find start location: after inner type without qualifiers.
   SourceRange SR = TL.getSourceRange();
-  return SourceRange(SR.getEnd(), VarNameLoc);
+  SourceLocation StartLoc =
+      Lexer::getLocForEndOfToken(SR.getBegin(), 0, SM, Context->getLangOpts());
+  TemplateSpecializationTypeLoc UTSTL =
+      UTL.getAs<TemplateSpecializationTypeLoc>();
+  if (!UTSTL.isNull())
+    StartLoc = UTSTL.getRAngleLoc().getLocWithOffset(1);
+  // TODO: TemplateClass<int>::type ?
+
+  //QualType VarType = Var->getType();
+  //if (VarType->isPointerType() || VarType->isReferenceType()) {
+  //  SourceRange LSR = TL.getLocalSourceRange();
+  //  if (LSR.isValid()) {
+  //    ;
+  //  }
+  //  // if (VarNameLoc < SR.getEnd())
+  //  return SR;
+  //}
+  //// if (VarNameLoc < SR.getEnd())
+  //return SourceRange(SR.getEnd(), VarNameLoc);
+  return SourceRange(StartLoc, EndLoc);
 }
 
 SourceRange findQualifier(const SourceManager &SM, const ASTContext *Context,
@@ -190,6 +242,37 @@ SourceRange findQualifier(const SourceManager &SM, const ASTContext *Context,
     return LeftConstR;
   }
   return findToken(SM, Context, RHS, Qualifier);
+}
+
+Qualifiers getInnerTypeQualifiers(QualType QT) {
+  // Use `QualType::getAsString()` to check for qualifiers, as they are always
+  // left to the type. The order of qualifiers in returned string is:
+  // `const volatile restrict` (cf. `clang::Qualifiers::print`).
+  Qualifiers Quals;
+  const std::string QTName = QT.getAsString();
+  std::istringstream Stream(QTName);
+
+  std::string Qualifier;
+  Stream >> Qualifier;
+  if (Qualifier == "const") {
+    Quals.addConst();
+    Stream >> Qualifier;
+  }
+  if (Qualifier == "volatile") {
+    Quals.addVolatile();
+    Stream >> Qualifier;
+  }
+  if (Qualifier == "restrict")
+    Quals.addRestrict();
+  return Quals;
+}
+
+QualType getInnerPointeeType(QualType VarType) {
+  // Get the most inner pointee type.
+  QualType PointeeType = VarType;
+  while (PointeeType->isPointerType() || PointeeType->isReferenceType())
+    PointeeType = PointeeType->getPointeeType();
+  return PointeeType;
 }
 
 void QualifiersOrder::check(const MatchFinder::MatchResult &Result) {
@@ -216,7 +299,6 @@ void QualifiersOrder::check(const MatchFinder::MatchResult &Result) {
   assert(Var);
   if (!Var)
     llvm_unreachable("Expected valid variable declaration");
-
 #if 0
   const TypeLoc *TLP = Result.Nodes.getStmtAs<TypeLoc>("type");
   if (!TLP)
@@ -224,35 +306,11 @@ void QualifiersOrder::check(const MatchFinder::MatchResult &Result) {
   TypeLoc TL = *TLP;
 #endif
 
-  // TODO: refactor: getInnerTypeQualifiers();
   QualType VarType = Var->getType();
-  const std::string VarTypeString = VarType.getAsString();
-  // Check VarTypeString for const, as it is always at the beginning.
-  auto SpaceOffset = VarTypeString.find(' ', 0);
-  if (SpaceOffset == std::string::npos)
+  Qualifiers Quals = getInnerTypeQualifiers(VarType);
+  if (!Quals.hasConst())
     return;
-  auto Qualifier = VarTypeString.substr(0, SpaceOffset);
-  bool HasConst = (Qualifier == "const");
-  if (HasConst) {
-    auto PreviousSpaceOffset = SpaceOffset;
-    SpaceOffset = VarTypeString.find(' ', PreviousSpaceOffset + 1);
-    if (SpaceOffset != std::string::npos)
-      Qualifier = VarTypeString.substr(PreviousSpaceOffset + 1,
-                                       SpaceOffset - (PreviousSpaceOffset + 1));
-  }
-  bool HasVolatile = (Qualifier == "volatile");
-
-  if (!HasConst)
-    return;
-
-  // Get the most inner pointee type.
-  QualType PointeeType = VarType;
-  while (PointeeType->isPointerType() || PointeeType->isReferenceType()) {
-    PointeeType = PointeeType->getPointeeType();
-    const std::string PointeeTypeString = PointeeType.getAsString();
-    (void)PointeeTypeString;
-    continue;
-  }
+  QualType PointeeType = getInnerPointeeType(VarType);
 
   // Find const qualifier before or after type.
   SourceRange LHS = getRangeBeforeType(SM, Context, Var);
