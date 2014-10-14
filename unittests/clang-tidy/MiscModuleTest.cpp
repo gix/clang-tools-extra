@@ -158,6 +158,16 @@ TEST(QualifiersOrderTest, TemplateReferences) {
                                       "C<const int> const &Cci_c = Cci;\n"));
 }
 
+TEST(QualifiersOrderTest, NestedTypedefs) {
+  EXPECT_EQ("template <typename T> class C { typedef int type; };\n"
+            "const C<int>::type Ci_c = Ci;\n"
+            "const C<const int>::type Cci_c = Cci;\n",
+            runCheckOnCode<QualifiersOrder>(
+                "template <typename T> class C { typedef int type; };\n"
+                "C<int>::type const Ci_c = Ci;\n"
+                "C<const int>::type const Cci_c = Cci;\n"));
+}
+
 TEST(QualifiersOrderTest, TemplateArguments) {
   EXPECT_EQ(
       "template <typename T> class C {};\n"
@@ -170,7 +180,21 @@ TEST(QualifiersOrderTest, TemplateArguments) {
                                       ));
 }
 
-// TODO(mkurdej): template <typename T> struct C {}; C<const int>::type const Ccic;
+TEST(QualifiersOrderTest, Namespaces) {
+  EXPECT_EQ("namespace out { namespace in {\n"
+            "template <typename T> class C {};\n"
+            "} // namespace in\n"
+            "} // namespace out\n"
+            "const out::in::C<int> Ci_c = Ci;\n"
+            "const out::in::C<const int> Cci_c = Cci;\n",
+            runCheckOnCode<QualifiersOrder>(
+                "namespace out { namespace in {\n"
+                "template <typename T> class C {};\n"
+                "} // namespace in\n"
+                "} // namespace out\n"
+                "out::in::C<int> const Ci_c = Ci;\n"
+                "out::in::C<const int> const Cci_c = Cci;\n"));
+}
 
 } // namespace test
 } // namespace tidy

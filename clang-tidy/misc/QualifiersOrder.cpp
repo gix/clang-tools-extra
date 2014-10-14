@@ -32,12 +32,6 @@ struct ScalarEnumerationTraits<QualifiersOrder::QualifierAlignmentStyle> {
 } // namespace llvm
 
 namespace clang {
-namespace ast_matchers {
-AST_MATCHER(QualType, isVolatileQualified) {
-  return Node.isVolatileQualified();
-}
-} // namespace ast_matchers
-
 namespace tidy {
 namespace {
 
@@ -54,26 +48,6 @@ tok::TokenKind getTokenKind(SourceLocation Loc, const SourceManager &SM,
     return tok::NUM_TOKENS;
   }
   return Tok.getKind();
-}
-
-SourceLocation
-backwardSkipWhitespaceAndComments(const SourceManager &SM,
-                                   const clang::ASTContext *Context,
-                                   SourceLocation Loc) {
-  for (;;) {
-    do {
-      Loc = Loc.getLocWithOffset(-1);
-    } while (isWhitespace(*FullSourceLoc(Loc, SM).getCharacterData()));
-
-    tok::TokenKind TokKind = getTokenKind(Loc, SM, Context);
-    if (TokKind == tok::NUM_TOKENS || TokKind != tok::comment) {
-      return Loc.getLocWithOffset(1);
-    }
-    // fast-backward current token
-    SourceLocation Beginning =
-        Lexer::GetBeginningOfToken(Loc, SM, Context->getLangOpts());
-    Loc = Beginning;
-  }
 }
 
 SourceLocation
@@ -141,11 +115,6 @@ void QualifiersOrder::storeOptions(ClangTidyOptions::OptionMap &Opts) {
 }
 
 void QualifiersOrder::registerMatchers(MatchFinder *Finder) {
-  // Finder->addMatcher(qualType(isConstQualified()).bind("const"), this);
-  // Finder->addMatcher(qualType(isVolatileQualified()).bind("volatile"), this);
-  // Finder->addMatcher(qualType(isConstQualified(), isVolatileQualified())
-  //                       .bind("const volatile"),
-  //                   this);
   Finder->addMatcher(varDecl().bind("var"), this);
 #if 0
   Finder->addMatcher(typeLoc().bind("type"), this);
@@ -160,20 +129,8 @@ SourceRange getRangeBeforeType(const SourceManager & /*SM*/,
                                const VarDecl *Var) {
   TypeSourceInfo *TSI = Var->getTypeSourceInfo();
   TypeLoc TL = TSI->getTypeLoc();
-  auto TLClass = TL.getTypeLocClass(); // TEMP
-
   UnqualTypeLoc UTL = TL.getUnqualifiedLoc();
-  auto UTLClass = UTL.getTypeLocClass(); // TEMP
-
   SourceRange USR = UTL.getSourceRange();
-  SourceRange SR = TL.getSourceRange();
-  SourceRange LSR = TL.getLocalSourceRange();
-
-  if (false) {
-    if (LSR.isValid())
-      return SourceRange(Var->getLocStart(), LSR.getBegin());
-    return SourceRange(Var->getLocStart(), SR.getBegin());
-  }
   return SourceRange(Var->getLocStart(), USR.getBegin());
 }
 
@@ -188,7 +145,6 @@ SourceRange getRangeAfterType(const SourceManager &SM,
   // Find end location: before variable name or before the first '*' or '&'.
   SourceLocation EndLoc = VarNameLoc;
   for (;;) {
-    auto TLClass = TL.getTypeLocClass(); // TEMP
     auto PTL = TL.getAs<PointerTypeLoc>();
     if (!PTL.isNull()) {
       TL = PTL.getPointeeLoc();
@@ -205,9 +161,14 @@ SourceRange getRangeAfterType(const SourceManager &SM,
     }
     break;
   }
-  auto TLClass = TL.getTypeLocClass(); // TEMP
   UnqualTypeLoc UTL = TL.getUnqualifiedLoc();
-  auto UTLClass = UTL.getTypeLocClass(); // TEMP
+
+  // Get inner type of an elaborated type location (e.g. namespace).
+  auto ETL = UTL.getAs<ElaboratedTypeLoc>();
+  if (!ETL.isNull()) {
+    TL = ETL.getNamedTypeLoc();
+    UTL = TL.getUnqualifiedLoc();
+  }
 
   // Find start location: after inner type without qualifiers.
   SourceRange SR = TL.getSourceRange();
@@ -217,26 +178,14 @@ SourceRange getRangeAfterType(const SourceManager &SM,
       UTL.getAs<TemplateSpecializationTypeLoc>();
   if (!UTSTL.isNull())
     StartLoc = UTSTL.getRAngleLoc().getLocWithOffset(1);
-  // TODO: TemplateClass<int>::type ?
-
-  //QualType VarType = Var->getType();
-  //if (VarType->isPointerType() || VarType->isReferenceType()) {
-  //  SourceRange LSR = TL.getLocalSourceRange();
-  //  if (LSR.isValid()) {
-  //    ;
-  //  }
-  //  // if (VarNameLoc < SR.getEnd())
-  //  return SR;
-  //}
-  //// if (VarNameLoc < SR.getEnd())
-  //return SourceRange(SR.getEnd(), VarNameLoc);
   return SourceRange(StartLoc, EndLoc);
 }
 
 SourceRange findQualifier(const SourceManager &SM, const ASTContext *Context,
                           SourceRange LHS, SourceRange RHS,
                           StringRef Qualifier) {
-  // TODO: assert((ConstOnLeft && !ConstOnRight) || (!ConstOnLeft && ConstOnRight));
+  // TODO: assert((ConstOnLeft && !ConstOnRight) || (!ConstOnLeft &&
+  // ConstOnRight));
   SourceRange LeftConstR = findToken(SM, Context, LHS, Qualifier);
   if (LeftConstR.isValid()) {
     return LeftConstR;
@@ -267,14 +216,6 @@ Qualifiers getInnerTypeQualifiers(QualType QT) {
   return Quals;
 }
 
-QualType getInnerPointeeType(QualType VarType) {
-  // Get the most inner pointee type.
-  QualType PointeeType = VarType;
-  while (PointeeType->isPointerType() || PointeeType->isReferenceType())
-    PointeeType = PointeeType->getPointeeType();
-  return PointeeType;
-}
-
 void QualifiersOrder::check(const MatchFinder::MatchResult &Result) {
   const SourceManager &SM = *Result.SourceManager;
   const ASTContext *Context = Result.Context;
@@ -299,103 +240,17 @@ void QualifiersOrder::check(const MatchFinder::MatchResult &Result) {
   assert(Var);
   if (!Var)
     llvm_unreachable("Expected valid variable declaration");
-#if 0
-  const TypeLoc *TLP = Result.Nodes.getStmtAs<TypeLoc>("type");
-  if (!TLP)
-    return;
-  TypeLoc TL = *TLP;
-#endif
 
   QualType VarType = Var->getType();
   Qualifiers Quals = getInnerTypeQualifiers(VarType);
   if (!Quals.hasConst())
     return;
-  QualType PointeeType = getInnerPointeeType(VarType);
 
   // Find const qualifier before or after type.
   SourceRange LHS = getRangeBeforeType(SM, Context, Var);
   SourceRange RHS = getRangeAfterType(SM, Context, Var);
   SourceRange ConstR = findQualifier(SM, Context, LHS, RHS, "const");
-
-  if (ConstR.isInvalid()) {
-    if (VarType != PointeeType) {
-      // TEST ranges
-      TypeSourceInfo *TSI = Var->getTypeSourceInfo();
-      TypeLoc TL = TSI->getTypeLoc();
-      SourceRange LocalSR = TL.getLocalSourceRange();
-      SourceRange SR = TL.getSourceRange();
-
-      mark(SR, "TL");
-      mark(LocalSR, "LTL");
-      if (auto QualTL = TL.getAs<QualifiedTypeLoc>()) {
-        TL = QualTL.getUnqualifiedLoc();
-        mark(QualTL.getSourceRange(), "QTL");
-      }
-    }
-    return;
-  }
-
-#if 0
-  // TypeLoc ParamTL = AllParamDecls[I]->getTypeSourceInfo()->getTypeLoc();
-  // ReferenceTypeLoc RefTL = ParamTL.getAs<ReferenceTypeLoc>();
-  // SourceRange Range(AllParamDecls[I]->getLocStart(), ParamTL.getLocEnd());
-  // CharSourceRange CharRange = Lexer::makeFileCharRange(
-  //     CharSourceRange::getTokenRange(Range), SM, LangOptions());
-
-  bool LocalConstQualified = VarType.isLocalConstQualified();
-  bool PointeeLocalConstQualified = PointeeType.isLocalConstQualified();
-  // TODO(mkurdej): restrict, volatile
-  //bool LocalVolatileQualified = VarType.isLocalVolatileQualified();
-  // if (!VarType.getLocalCVRQualifiers()) {
-
-  if (!(LocalConstQualified || PointeeLocalConstQualified)) {
-    // Nothing to do.
-    return;
-  }
-
-  auto SR = Var->getSourceRange();
-
-  // In:                    int ii = 0;
-  // Var->getLocation()           ^
-  // getLocWithOffset(-1)        ^
-  // GetBeginningOfToken        ^
-  // backwardSkip              ^
-  // ReplacementRange       ~~~
-  
-  // TODO: solution is to move "const  "
-  TypeSourceInfo *TSI = Var->getTypeSourceInfo();
-  TypeLoc TL = TSI->getTypeLoc();
-  SourceRange TypeWithoutQualifiersRange = TL.getLocalSourceRange();
-  SourceRange TypeLocRange = TL.getSourceRange();
-  SourceRange ConstR = findToken(SM, Context, SR, "const");
-  // if pointer || reference
-  //TypeLoc NextTL = TL.getNextTypeLoc();
-  UnqualTypeLoc UnqualTL = TL.getUnqualifiedLoc();
-  SourceRange UnqualTypeWithoutQualifiersRange = UnqualTL.getLocalSourceRange();
-  SourceRange UnqualTypeLocRange = UnqualTL.getSourceRange();
-
-  SourceLocation Loc = TL.getLocStart();
-  if (Loc.isInvalid() || Loc.isMacroID())
-    return;
-  // Look through qualification.
-  if (auto QualTL = TL.getAs<QualifiedTypeLoc>())
-    TL = QualTL.getUnqualifiedLoc();
-  //auto BuiltinTL = TL.getAs<BuiltinTypeLoc>();
-  //if (BuiltinTL)
-  //  return;
-
-  diag(TL.getLocStart(), "TL.getLocStart()");
-  diag(TL.getLocEnd(), "TL.getLocEnd()");
-
-  SourceLocation VarNameLoc = Var->getLocation();
-  VarNameLoc = Lexer::GetBeginningOfToken(VarNameLoc.getLocWithOffset(-1), SM,
-                                          Context->getLangOpts());
-  VarNameLoc = VarNameLoc.getLocWithOffset(1);
-  VarNameLoc = backwardSkipWhitespaceAndComments(SM, Context, VarNameLoc);
-
-  SourceRange ReplacementRange(SR.getBegin(), VarNameLoc);
-  const std::string TypeString = VarType.getAsString();
-#endif
+  assert(ConstR.isValid());
 
   // Skip whitespace and comments following const.
   ConstR.setEnd(forwardSkipWhitespaceAndComments(SM, Context, ConstR.getEnd()));
@@ -417,8 +272,8 @@ void QualifiersOrder::check(const MatchFinder::MatchResult &Result) {
     auto Diag = diag(LeftInsertLoc, "wrong order of qualifiers");
     // Move qualifier.
     CharSourceRange CharRange = CharSourceRange::getCharRange(ConstR);
-    //CharSourceRange CharRange = CharSourceRange::getTokenRange(ConstR);
-    //CharSourceRange CharRange = Lexer::makeFileCharRange(
+    // CharSourceRange CharRange = CharSourceRange::getTokenRange(ConstR);
+    // CharSourceRange CharRange = Lexer::makeFileCharRange(
     //    CharSourceRange::getTokenRange(ConstR), SM, LangOptions());
     Diag << FixItHint::CreateInsertionFromRange(InsertLoc, CharRange);
     // FixItHint::CreateRemoval removes a closed (token) range [a, b] and we
