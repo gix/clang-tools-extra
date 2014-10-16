@@ -11,7 +11,13 @@
 #define LLVM_CLANG_TOOLS_EXTRA_CLANG_TIDY_MISC_CV_QUALIFIERS_ORDER_H
 
 #include "../ClangTidy.h"
-#include "llvm/Support/YAMLTraits.h"
+
+namespace llvm {
+namespace yaml {
+    template <typename T>
+    struct MappingTraits;
+} // namespace yaml
+} // namespace llvm
 
 namespace clang {
 namespace tidy {

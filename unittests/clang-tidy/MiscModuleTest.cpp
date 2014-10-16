@@ -88,19 +88,13 @@ TEST(QualifiersOrderTest, TemplatesBasic) {
       "template <typename T> class C {};\n"
       "const C<int> cCi = {};\n"
       "const C<const int> cCci = {};\n"
-      //"const C<const int> cCic = {};\n"
       "const C<int> Ci_c = {};\n"
-      "const C<const int> Cci_c = {};\n"
-      //"const C<const int> Cic_c = {};\n"
-      ,
+      "const C<const int> Cci_c = {};\n",
       runCheckOnCode<QualifiersOrder>("template <typename T> class C {};\n"
                                       "const C<int> cCi = {};\n"
                                       "const C<const int> cCci = {};\n"
-                                      //"const C<int const> cCic = {};\n"
                                       "C<int> const Ci_c = {};\n"
-                                      "C<const int> const Cci_c = {};\n"
-                                      //"C<int const> const Cic_c = {};\n"
-                                      ));
+                                      "C<const int> const Cci_c = {};\n"));
 }
 
 TEST(QualifiersOrderTest, Pointers) {
@@ -158,7 +152,7 @@ TEST(QualifiersOrderTest, TemplateReferences) {
                                       "C<const int> const &Cci_c = Cci;\n"));
 }
 
-TEST(QualifiersOrderTest, NestedTypedefs) {
+TEST(QualifiersOrderTest, NestedTypes) {
   EXPECT_EQ("template <typename T> class C { typedef int type; };\n"
             "const C<int>::type Ci_c = Ci;\n"
             "const C<const int>::type Cci_c = Cci;\n",
@@ -166,35 +160,83 @@ TEST(QualifiersOrderTest, NestedTypedefs) {
                 "template <typename T> class C { typedef int type; };\n"
                 "C<int>::type const Ci_c = Ci;\n"
                 "C<const int>::type const Cci_c = Cci;\n"));
-}
-
-TEST(QualifiersOrderTest, TemplateArguments) {
   EXPECT_EQ(
-      "template <typename T> class C {};\n"
-      //"const C<const int> *cCic = {};\n"
-      //"const C<const int> *Cic_c = {};\n"
-      ,
-      runCheckOnCode<QualifiersOrder>("template <typename T> class C {};\n"
-                                      //"const C<int const> *cCic = {};\n"
-                                      //"C<int const> const *Cic_c = {};\n"
-                                      ));
+      "template <typename T> struct C { template <typename U> class D; };\n"
+      "const C<int>::D<float> CDc = {};\n"
+      "const C<const int>::D<const float> cCD = {};\n",
+      runCheckOnCode<QualifiersOrder>(
+          "template <typename T> struct C { template <typename U> class D; };\n"
+          "C<int>::D<float> const CDc = {};\n"
+          "C<const int>::D<const float> const cCD = {};\n"));
 }
 
 TEST(QualifiersOrderTest, Namespaces) {
   EXPECT_EQ("namespace out { namespace in {\n"
+            "class C {};\n"
+            "} // namespace in\n"
+            "} // namespace out\n"
+            "const out::in::C cC = {};\n"
+            "const out::in::C Cc = {};\n",
+            runCheckOnCode<QualifiersOrder>(
+                "namespace out { namespace in {\n"
+                "class C {};\n"
+                "} // namespace in\n"
+                "} // namespace out\n"
+                "const out::in::C cC = {};\n"
+                "out::in::C const Cc = {};\n"));
+  EXPECT_EQ("namespace out { namespace in {\n"
             "template <typename T> class C {};\n"
             "} // namespace in\n"
             "} // namespace out\n"
-            "const out::in::C<int> Ci_c = Ci;\n"
-            "const out::in::C<const int> Cci_c = Cci;\n",
+            "const out::in::C<int> Ci_c = {};\n"
+            "const out::in::C<const int> Cci_c = {};\n",
             runCheckOnCode<QualifiersOrder>(
                 "namespace out { namespace in {\n"
                 "template <typename T> class C {};\n"
                 "} // namespace in\n"
                 "} // namespace out\n"
-                "out::in::C<int> const Ci_c = Ci;\n"
-                "out::in::C<const int> const Cci_c = Cci;\n"));
+                "out::in::C<int> const Ci_c = {};\n"
+                "out::in::C<const int> const Cci_c = {};\n"));
 }
+
+TEST(QualifiersOrderTest, FunctionMethodLambdaArguments) {
+  EXPECT_EQ("void f(const int i = 0);",
+            runCheckOnCode<QualifiersOrder>("void f(int const i = 0);"));
+  EXPECT_EQ("void f(const int i = 0) {}",
+            runCheckOnCode<QualifiersOrder>("void f(int const i = 0) {}"));
+  EXPECT_EQ("struct S {\n"
+            "void f(const int i = 0);\n"
+            "};\n",
+            runCheckOnCode<QualifiersOrder>("struct S {\n"
+                                            "void f(int const i = 0);\n"
+                                            "};\n"));
+  EXPECT_EQ("int main() {\n"
+            "auto f = [](const int i) { return 0; };\n"
+            "}\n",
+            runCheckOnCode<QualifiersOrder>(
+                "int main() {\n"
+                "auto f = [](int const i) { return 0; };\n"
+                "}\n"));
+}
+
+TEST(QualifiersOrderTest, FunctionMethodLambdaReturnType) {
+  EXPECT_EQ("const int f();",
+            runCheckOnCode<QualifiersOrder>("int const f();"));
+}
+
+/*
+TEST(QualifiersOrderTest, TemplateArguments) {
+  EXPECT_EQ(
+      "template <typename T> class C {};\n"
+      "const C<const int> *cCic = {};\n"
+      "const C<const int> *Cic_c = {};\n",
+      runCheckOnCode<QualifiersOrder>("template <typename T> class C {};\n"
+                                      "const C<int const> *cCic = {};\n"
+                                      "C<int const> const *Cic_c = {};\n"));
+}
+*/
+
+// TODO(mkurdej): function return type, lambda arguments
 
 } // namespace test
 } // namespace tidy

@@ -7,12 +7,22 @@
 //
 //===----------------------------------------------------------------------===//
 
+// TODO(mkurdej): remove MSVC pragmas
+#ifdef _MSC_VER
+#pragma warning(push)
+#pragma warning(disable: 4100)
+#endif // _MSC_VER
+
 #include "QualifiersOrder.h"
 #include "clang/AST/ASTContext.h"
 #include "clang/ASTMatchers/ASTMatchFinder.h"
 #include "clang/Lex/Lexer.h"
 #include "llvm/Support/YAMLTraits.h"
 #include <sstream>
+
+#ifdef _MSC_VER
+#pragma warning(pop)
+#endif // _MSC_VER
 
 using namespace clang::ast_matchers;
 using clang::tidy::QualifiersOrder;
@@ -116,9 +126,21 @@ void QualifiersOrder::storeOptions(ClangTidyOptions::OptionMap &Opts) {
 
 void QualifiersOrder::registerMatchers(MatchFinder *Finder) {
   Finder->addMatcher(varDecl().bind("var"), this);
-#if 0
-  Finder->addMatcher(typeLoc().bind("type"), this);
-#endif
+  ClassTemplateSpecializationDecl *CTSD;
+  // const TemplateArgumentList & TArgList = CTSD->getTemplateArgs();
+  // 
+
+  //Finder->addMatcher(classTemplateSpecializationDecl(hasAnyTemplateArgument())
+  //                       .bind("class-template-arg"),
+  //                   this);
+
+  //Finder->addMatcher(typeLoc().bind("type"), this);
+  //Finder->addMatcher(typeLoc(isInTemplateInstantiation()).bind("type"), this);
+  // isInTemplateInstantiation -> isInTemplateSpecializationDecl
+  // classTemplateSpecializationDecl -> get arguments
+  // function templates
+  // classTemplateSpecializationDecl(hasAnyTemplateArgument())
+  // parmVarDecl
   // TODO(mkurdej): declarations in if/for/while: ?Stmt()
   // TODO(mkurdej): function/method arguments: functionDecl
   // TODO(mkurdej): typedefs typedefType()
@@ -134,6 +156,23 @@ SourceRange getRangeBeforeType(const SourceManager & /*SM*/,
   return SourceRange(Var->getLocStart(), USR.getBegin());
 }
 
+TypeLoc getInnerPointeeLoc(TypeLoc TL) {
+  for (;;) {
+    auto PTL = TL.getAs<PointerTypeLoc>();
+    if (!PTL.isNull()) {
+      TL = PTL.getPointeeLoc();
+      continue;
+    }
+
+    auto RTL = TL.getAs<ReferenceTypeLoc>();
+    if (!RTL.isNull()) {
+      TL = RTL.getPointeeLoc();
+      continue;
+    }
+    return TL;
+  }
+}
+
 SourceRange getRangeAfterType(const SourceManager &SM,
                               const ASTContext *Context, const VarDecl *Var) {
   SourceLocation VarNameLoc = Var->getLocation();
@@ -144,6 +183,7 @@ SourceRange getRangeAfterType(const SourceManager &SM,
 
   // Find end location: before variable name or before the first '*' or '&'.
   SourceLocation EndLoc = VarNameLoc;
+  // TODO: TL = getInnerPointeeLoc(TL);
   for (;;) {
     auto PTL = TL.getAs<PointerTypeLoc>();
     if (!PTL.isNull()) {
@@ -170,14 +210,17 @@ SourceRange getRangeAfterType(const SourceManager &SM,
     UTL = TL.getUnqualifiedLoc();
   }
 
-  // Find start location: after inner type without qualifiers.
+  // Find start location, go past inner unqualified type.
   SourceRange SR = TL.getSourceRange();
   SourceLocation StartLoc =
       Lexer::getLocForEndOfToken(SR.getBegin(), 0, SM, Context->getLangOpts());
+
+  // For a template specialization, go past the closing bracket.
   TemplateSpecializationTypeLoc UTSTL =
       UTL.getAs<TemplateSpecializationTypeLoc>();
   if (!UTSTL.isNull())
     StartLoc = UTSTL.getRAngleLoc().getLocWithOffset(1);
+
   return SourceRange(StartLoc, EndLoc);
 }
 
@@ -191,6 +234,14 @@ SourceRange findQualifier(const SourceManager &SM, const ASTContext *Context,
     return LeftConstR;
   }
   return findToken(SM, Context, RHS, Qualifier);
+}
+
+Qualifiers getInnerTypeQualifiers(TypeLoc TL) {
+  TL = getInnerPointeeLoc(TL);
+  auto Str = TL.getType().getAsString();
+  Qualifiers Quals = TL.getType().getLocalQualifiers();
+  // UnqualTypeLoc UTL = TL.getUnqualifiedLoc();
+  return Quals;
 }
 
 Qualifiers getInnerTypeQualifiers(QualType QT) {
@@ -220,33 +271,21 @@ void QualifiersOrder::check(const MatchFinder::MatchResult &Result) {
   const SourceManager &SM = *Result.SourceManager;
   const ASTContext *Context = Result.Context;
 
-  auto mark = [=, &SM](SourceRange R, StringRef Mark) {
-    // assert(SR.isValid());
-    auto StartLoc = R.getBegin();
-    auto EndLoc = R.getEnd();
-    if (EndLoc.isValid()) {
-      EndLoc =
-          Lexer::getLocForEndOfToken(EndLoc, 0, SM, Context->getLangOpts());
-    }
-    if (R.isValid()) {
-      auto Diag = diag(StartLoc, Mark);
-      // Diag << FixItHint::CreateRemoval(SR);
-      Diag << FixItHint::CreateInsertion(StartLoc, "[" + Mark.str() + "[[");
-      Diag << FixItHint::CreateInsertion(EndLoc, "]]" + Mark.str() + "]");
-    }
-  };
-
   const VarDecl *Var = Result.Nodes.getStmtAs<VarDecl>("var");
   assert(Var);
   if (!Var)
     llvm_unreachable("Expected valid variable declaration");
 
-  QualType VarType = Var->getType();
-  Qualifiers Quals = getInnerTypeQualifiers(VarType);
+  // Check if the type is const-qualified.
+  Qualifiers Quals/*Test*/ =
+      getInnerTypeQualifiers(Var->getTypeSourceInfo()->getTypeLoc());
+  //Qualifiers Quals = getInnerTypeQualifiers(Var->getType());
+  //assert(QualsTest == Quals);
+  // TODO: if TemplateSpecializationTypeLoc -> check arguments
   if (!Quals.hasConst())
     return;
 
-  // Find const qualifier before or after type.
+  // Find const qualifier of the inner (leftmost) type.
   SourceRange LHS = getRangeBeforeType(SM, Context, Var);
   SourceRange RHS = getRangeAfterType(SM, Context, Var);
   SourceRange ConstR = findQualifier(SM, Context, LHS, RHS, "const");
@@ -255,21 +294,20 @@ void QualifiersOrder::check(const MatchFinder::MatchResult &Result) {
   // Skip whitespace and comments following const.
   ConstR.setEnd(forwardSkipWhitespaceAndComments(SM, Context, ConstR.getEnd()));
 
-  // Define insert locations, respectively, left and right to the type.
-  SourceLocation LeftInsertLoc = Var->getLocStart();
-  // TODO(mkurdej): directly after the most inner (leftmost) type without
-  // qualifiers.
-  SourceLocation RightInsertLoc = RHS.getBegin();
+  // Define insert location, respectively, left and right to the type.
   SourceLocation InsertLoc;
-  if (QualifierAlignment == QAS_Left) {
-    InsertLoc = LeftInsertLoc;
-  } else if (QualifierAlignment == QAS_Right) {
-    InsertLoc = RightInsertLoc;
-  } else {
+  switch (QualifierAlignment) {
+  case QAS_Left:
+    InsertLoc = Var->getLocStart();
+    break;
+  case QAS_Right:
+    InsertLoc = RHS.getBegin();
+    break;
+  default:
     llvm_unreachable("Invalid QualifierAlignmentStyle");
   }
   if (ConstR.getBegin() != InsertLoc) {
-    auto Diag = diag(LeftInsertLoc, "wrong order of qualifiers");
+    auto Diag = diag(Var->getLocStart(), "wrong order of qualifiers");
     // Move qualifier.
     CharSourceRange CharRange = CharSourceRange::getCharRange(ConstR);
     // CharSourceRange CharRange = CharSourceRange::getTokenRange(ConstR);
