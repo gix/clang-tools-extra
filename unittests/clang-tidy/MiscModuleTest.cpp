@@ -103,7 +103,7 @@ TEST(QualifiersOrderTest, Pointers) {
   //EXPECT_NO_CHANGES(QualifiersOrder, "volatile const int *cip;\n");
   EXPECT_EQ("const int *cip;\n",
             runCheckOnCode<QualifiersOrder>("int const *cip;\n"));
-  EXPECT_NO_CHANGES(QualifiersOrder, "int *const cip = nullptr;\n");
+  EXPECT_NO_CHANGES(QualifiersOrder, "const int *cip = nullptr;");
   EXPECT_NO_CHANGES(QualifiersOrder, "int *const ipc = nullptr;");
   EXPECT_NO_CHANGES(QualifiersOrder, "const int *const cipc = nullptr;");
   EXPECT_EQ(

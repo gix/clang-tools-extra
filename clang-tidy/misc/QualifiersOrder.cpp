@@ -126,7 +126,7 @@ void QualifiersOrder::storeOptions(ClangTidyOptions::OptionMap &Opts) {
 
 void QualifiersOrder::registerMatchers(MatchFinder *Finder) {
   Finder->addMatcher(varDecl().bind("var"), this);
-  ClassTemplateSpecializationDecl *CTSD;
+  //ClassTemplateSpecializationDecl *CTSD;
   // const TemplateArgumentList & TArgList = CTSD->getTemplateArgs();
   // 
 
@@ -158,13 +158,15 @@ SourceRange getRangeBeforeType(const SourceManager & /*SM*/,
 
 TypeLoc getInnerPointeeLoc(TypeLoc TL) {
   for (;;) {
-    auto PTL = TL.getAs<PointerTypeLoc>();
+    auto TLClass = TL.getTypeLocClass();
+    UnqualTypeLoc UTL = TL.getUnqualifiedLoc();
+    auto PTL = UTL.getAs<PointerTypeLoc>();
     if (!PTL.isNull()) {
       TL = PTL.getPointeeLoc();
       continue;
     }
 
-    auto RTL = TL.getAs<ReferenceTypeLoc>();
+    auto RTL = UTL.getAs<ReferenceTypeLoc>();
     if (!RTL.isNull()) {
       TL = RTL.getPointeeLoc();
       continue;
@@ -238,9 +240,7 @@ SourceRange findQualifier(const SourceManager &SM, const ASTContext *Context,
 
 Qualifiers getInnerTypeQualifiers(TypeLoc TL) {
   TL = getInnerPointeeLoc(TL);
-  auto Str = TL.getType().getAsString();
   Qualifiers Quals = TL.getType().getLocalQualifiers();
-  // UnqualTypeLoc UTL = TL.getUnqualifiedLoc();
   return Quals;
 }
 
