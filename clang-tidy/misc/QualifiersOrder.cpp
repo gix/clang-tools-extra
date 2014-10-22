@@ -244,29 +244,6 @@ Qualifiers getInnerTypeQualifiers(TypeLoc TL) {
   return Quals;
 }
 
-Qualifiers getInnerTypeQualifiers(QualType QT) {
-  // Use `QualType::getAsString()` to check for qualifiers, as they are always
-  // left to the type. The order of qualifiers in returned string is:
-  // `const volatile restrict` (cf. `clang::Qualifiers::print`).
-  Qualifiers Quals;
-  const std::string QTName = QT.getAsString();
-  std::istringstream Stream(QTName);
-
-  std::string Qualifier;
-  Stream >> Qualifier;
-  if (Qualifier == "const") {
-    Quals.addConst();
-    Stream >> Qualifier;
-  }
-  if (Qualifier == "volatile") {
-    Quals.addVolatile();
-    Stream >> Qualifier;
-  }
-  if (Qualifier == "restrict")
-    Quals.addRestrict();
-  return Quals;
-}
-
 void QualifiersOrder::check(const MatchFinder::MatchResult &Result) {
   const SourceManager &SM = *Result.SourceManager;
   const ASTContext *Context = Result.Context;
