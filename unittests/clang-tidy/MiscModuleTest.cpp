@@ -222,6 +222,12 @@ TEST(QualifiersOrderTest, FunctionMethodLambdaArguments) {
 TEST(QualifiersOrderTest, FunctionMethodLambdaReturnType) {
   EXPECT_EQ("const int f();",
             runCheckOnCode<QualifiersOrder>("int const f();"));
+  EXPECT_EQ("struct S {\n"
+            "const int f(const int i = 0);\n"
+            "};\n",
+            runCheckOnCode<QualifiersOrder>("struct S {\n"
+                                            "int const f(int const i = 0);\n"
+                                            "};\n"));
 }
 
 /*

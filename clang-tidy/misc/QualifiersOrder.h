@@ -43,6 +43,10 @@ public:
   };
 
 private:
+  void checkQualifiers(const SourceManager &SM, const ASTContext *Context,
+                       TypeLoc TL, SourceRange R);
+
+private:
   friend struct llvm::yaml::MappingTraits<QualifiersOrder>;
   QualifierAlignmentStyle QualifierAlignment;
 };
