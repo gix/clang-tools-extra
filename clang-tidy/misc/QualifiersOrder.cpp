@@ -93,6 +93,8 @@ StringRef getAsString(const SourceManager &SM, const clang::ASTContext *Context,
 
 SourceRange findToken(const SourceManager &SM, const clang::ASTContext *Context,
                       SourceRange SR, StringRef Text) {
+  if (SR.isInvalid())
+    return SourceRange();
   assert(SR.isValid());
   for (SourceLocation Loc = SR.getBegin(); Loc < SR.getEnd();) {
     // FIXME(mkurdej): Loc can actually be past SR.getEnd()
@@ -143,21 +145,20 @@ SourceRange findTokenBackwards(const SourceManager &SM,
 TypeLoc getInnerPointeeLoc(TypeLoc TL, SourceLocation *SigilLoc = nullptr) {
   for (;;) {
     UnqualTypeLoc UTL = TL.getUnqualifiedLoc();
-    auto PTL = UTL.getAs<PointerTypeLoc>();
-    if (!PTL.isNull()) {
+    if (auto PTL = UTL.getAs<PointerTypeLoc>()) {
       TL = PTL.getPointeeLoc();
       if (SigilLoc)
         *SigilLoc = PTL.getSigilLoc();
-      continue;
-    }
-    auto RTL = UTL.getAs<ReferenceTypeLoc>();
-    if (!RTL.isNull()) {
+    } else if (auto RTL = UTL.getAs<ReferenceTypeLoc>()) {
       TL = RTL.getPointeeLoc();
       if (SigilLoc)
         *SigilLoc = RTL.getSigilLoc();
-      continue;
+    } else if (auto ATL = UTL.getAs<AttributedTypeLoc>()) {
+      TL = ATL.getNextTypeLoc();
+    } else {
+      auto UTLC = UTL.getTypeLocClass();
+      return TL;
     }
-    return TL;
   }
 }
 
@@ -265,21 +266,47 @@ void QualifiersOrder::check(const MatchFinder::MatchResult &Result) {
 
   if (auto Var = Result.Nodes.getStmtAs<VarDecl>("var")) {
     SourceLocation VarNameLoc = Var->getLocation();
+    if (VarNameLoc.isInvalid())
+      return;
     VarNameLoc = Lexer::GetBeginningOfToken(VarNameLoc.getLocWithOffset(-1), SM,
                                             Context->getLangOpts());
-    checkQualifiers(SM, Context, Var->getTypeSourceInfo()->getTypeLoc(),
+    TypeSourceInfo *TIS = Var->getTypeSourceInfo();
+    if (!TIS)
+      return;
+    checkQualifiers(SM, Context, TIS->getTypeLoc(),
                     SourceRange(Var->getLocStart(), VarNameLoc));
   } else if (auto Fun = Result.Nodes.getStmtAs<FunctionDecl>("function")) {
-    TypeLoc FunTL = Fun->getTypeSourceInfo()->getTypeLoc();
+    TypeSourceInfo *TIS = Fun->getTypeSourceInfo();
+    if (!TIS)
+      return;
+    TypeLoc FunTL = TIS->getTypeLoc();
+    if (!FunTL)
+      return;
+    auto FunTLC = FunTL.getTypeLocClass(); // TMP
+    if (FunTL.getTypeLocClass() == TypeLoc::Attributed) {
+      auto ATL = FunTL.getAs<AttributedTypeLoc>();
+      TypeLoc ModTL = ATL.getModifiedLoc();
+      auto ModTLC = ModTL.getTypeLocClass(); // TMP
+      FunTL = ModTL;
+    }
+    FunTLC = FunTL.getTypeLocClass(); // TMP
     auto FTL = FunTL.getAs<FunctionTypeLoc>();
-    assert(FTL);
     if (!FTL)
       return;
+    auto FLocStart = Fun->getLocStart();
     checkQualifiers(SM, Context, FTL.getReturnLoc(),
                     SourceRange(Fun->getLocStart(), Fun->getLocation()));
   } else if (auto TD = Result.Nodes.getStmtAs<TypedefDecl>("typedef")) {
-    checkQualifiers(SM, Context, TD->getTypeSourceInfo()->getTypeLoc(),
-                    TD->getSourceRange());
+    SourceRange R = TD->getSourceRange();
+    if (R.isInvalid() || R.getBegin().isMacroID())
+      return;
+    // Go past "typedef" keyword.
+    SourceLocation PastTypedefLoc =
+        Lexer::getLocForEndOfToken(R.getBegin(), 0, SM, Context->getLangOpts());
+    PastTypedefLoc =
+        forwardSkipWhitespaceAndComments(SM, Context, PastTypedefLoc);
+    R.setBegin(PastTypedefLoc);
+    checkQualifiers(SM, Context, TD->getTypeSourceInfo()->getTypeLoc(), R);
   } else if (auto TSL = Result.Nodes.getStmtAs<TypeLoc>("template-spec-loc")) {
     TypeLoc PointeeTL = getInnerPointeeLoc(*TSL).getUnqualifiedLoc();
     auto TSTL = PointeeTL.getAs<TemplateSpecializationTypeLoc>();
@@ -290,23 +317,30 @@ void QualifiersOrder::check(const MatchFinder::MatchResult &Result) {
     if (NumArgs == 0)
       return;
 
-    SourceLocation StartLoc = TSTL.getLAngleLoc().getLocWithOffset(1);
+    SourceLocation StartLoc = TSTL.getLAngleLoc();
+    if (StartLoc.isInvalid() || StartLoc.isMacroID())
+      return;
+    StartLoc = StartLoc.getLocWithOffset(1);
     for (unsigned int Arg = 0; Arg < NumArgs - 1; ++Arg) {
       TemplateArgumentLoc TAL = TSTL.getArgLoc(Arg);
-      if (TAL.getArgument().getKind() != TemplateArgument::Type)
-        continue;
-      TypeLoc TL = TAL.getTypeSourceInfo()->getTypeLoc();
       TemplateArgumentLoc NextTAL = TSTL.getArgLoc(Arg + 1);
       // FIXME: EndLoc goes too far (and overlaps next TAL).
       SourceLocation EndLoc = NextTAL.getSourceRange().getBegin();
+      if (EndLoc.isMacroID())
+        continue;
       // Find a comma ',' going backwards.
       SourceRange SR = findTokenBackwards(SM, Context, EndLoc, ",");
       assert(SR.isValid());
       EndLoc = SR.getBegin();
+      SourceLocation NewEndLoc = forwardSkipWhitespaceAndComments(
+          SM, Context, EndLoc.getLocWithOffset(1));
+      if (TAL.getArgument().getKind() != TemplateArgument::Type) {
+        StartLoc = NewEndLoc;
+        continue;
+      }
+      TypeLoc TL = TAL.getTypeSourceInfo()->getTypeLoc();
       checkQualifiers(SM, Context, TL, SourceRange(StartLoc, EndLoc));
-
-      StartLoc = forwardSkipWhitespaceAndComments(SM, Context,
-                                                  EndLoc.getLocWithOffset(1));
+      StartLoc = NewEndLoc;
     }
     TemplateArgumentLoc TAL = TSTL.getArgLoc(NumArgs - 1);
     if (TAL.getArgument().getKind() != TemplateArgument::Type)
@@ -322,9 +356,13 @@ void QualifiersOrder::check(const MatchFinder::MatchResult &Result) {
 void QualifiersOrder::checkQualifiers(const SourceManager &SM,
                                       const ASTContext *Context, TypeLoc TL,
                                       SourceRange R) {
+  assert(R.isValid());
+  // Skip macros.
+  if (R.getBegin().isMacroID())
+    return;
+  assert(!!TL);
   // Check if the type is const-qualified.
   Qualifiers Quals = getInnerTypeQualifiers(TL);
-  // TODO: if TemplateSpecializationTypeLoc -> check arguments
   if (!Quals.hasConst())
     return;
 
@@ -332,20 +370,25 @@ void QualifiersOrder::checkQualifiers(const SourceManager &SM,
   SourceRange LHS = getRangeBeforeType(TL, R.getBegin());
   SourceRange RHS = getRangeAfterType(SM, Context, TL, R.getEnd());
   SourceRange ConstR = findQualifier(SM, Context, LHS, RHS, "const");
-  assert(ConstR.isValid());
+  if (ConstR.isInvalid()) {
+    // It happens when const comes from a macro expansion.
+    return;
+  }
 
   // Skip whitespace and comments following const.
   ConstR.setEnd(forwardSkipWhitespaceAndComments(SM, Context, ConstR.getEnd()));
 
   // Define insert location, respectively, left and right to the type.
   SourceLocation InsertLoc;
+  SourceLocation MiddleLoc = LHS.getEnd();
   bool MaybeAddSpaceBefore = false, MaybeAddSpaceAfter = false;
   switch (QualifierAlignment) {
   case QAS_Left:
     MaybeAddSpaceAfter = true;
     InsertLoc = R.getBegin();
-    if ((ConstR.getBegin() < InsertLoc) || (ConstR.getBegin() == InsertLoc)) {
-      // Already on the left
+    // FIXME: Handle 'static' keyword.
+    if ((ConstR.getBegin() < MiddleLoc) || (ConstR.getBegin() == MiddleLoc)) {
+      // Already on the left.
       return;
     }
     break;
@@ -357,7 +400,7 @@ void QualifiersOrder::checkQualifiers(const SourceManager &SM,
     }
     assert(InsertLoc.isValid());
     if (!(ConstR.getBegin() < InsertLoc)) {
-      // Already on the right
+      // Already on the right.
       return;
     }
     break;
@@ -367,7 +410,7 @@ void QualifiersOrder::checkQualifiers(const SourceManager &SM,
 
   auto Diag = diag(R.getBegin(), "wrong order of qualifiers");
 
-  // Add a space if necessary
+  // Add a space if necessary.
   const char *ConstFront = SM.getCharacterData(InsertLoc.getLocWithOffset(-1));
   assert(ConstFront);
   bool MustAddSpaceBefore =
@@ -379,7 +422,7 @@ void QualifiersOrder::checkQualifiers(const SourceManager &SM,
   CharSourceRange CharRange = CharSourceRange::getCharRange(ConstR);
   Diag << FixItHint::CreateInsertionFromRange(InsertLoc, CharRange);
 
-  // Add a space if necessary
+  // Add a space if necessary.
   const char *ConstBack =
       SM.getCharacterData(ConstR.getEnd().getLocWithOffset(-1));
   assert(ConstBack);

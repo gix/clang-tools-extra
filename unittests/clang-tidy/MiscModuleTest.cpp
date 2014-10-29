@@ -59,15 +59,6 @@ TEST(QualifiersOrderTest, Basic) {
             runCheckOnCode<QualifiersOrder>("int /*const*/ const   i = 0;"));
   EXPECT_NO_CHANGES(QualifiersOrder, "const int ci = 0;");
   EXPECT_NO_CHANGES(QualifiersOrder, "const /**/ int ci = 0;");
-#if 0
-  // This check does not work for macros yet.
-  EXPECT_NO_CHANGES(QualifiersOrder, "#define CONST const\n"
-                                     "CONST /**/ int ci = 0;");
-  EXPECT_EQ("#define CONST const\n"
-            "CONST int /**/ ci = 0;",
-            runCheckOnCode<QualifiersOrder>("#define CONST const\n"
-                                            "int CONST /**/ ci = 0;"));
-#endif
   EXPECT_EQ("const int ic = 0;\n",
             runCheckOnCode<QualifiersOrder>("int const ic = 0;\n"));
   EXPECT_EQ("typedef int foo;\n"
@@ -86,6 +77,14 @@ TEST(QualifiersOrderTest, Basic) {
             "const auto ic = 0;\n",
             runCheckOnCode<QualifiersOrder>("const auto ci = 0;\n"
                                             "auto const ic = 0;\n"));
+}
+
+TEST(QualifiersOrderTest, Static) {
+  EXPECT_NO_CHANGES(QualifiersOrder, "static const volatile int i = 0;\n");
+  EXPECT_NO_CHANGES(QualifiersOrder,
+                    "static const int f(const volatile int i = 0);\n");
+  EXPECT_NO_CHANGES(QualifiersOrder,
+                    "static const int f(const volatile int i = 0) {}\n");
 }
 
 TEST(QualifiersOrderTest, TemplatesBasic) {
@@ -119,6 +118,7 @@ TEST(QualifiersOrderTest, Pointers) {
 TEST(QualifiersOrderTest, References) {
   EXPECT_NO_CHANGES(QualifiersOrder, "int i = 0;\n"
                                      "const int &cir = i;\n");
+  EXPECT_NO_CHANGES(QualifiersOrder, "const int &&cir = int();\n");
   EXPECT_EQ("int i = 0;\n"
             "const int &icr = i;",
             runCheckOnCode<QualifiersOrder>("int i = 0;\n"
@@ -237,6 +237,8 @@ TEST(QualifiersOrderTest, FunctionMethodLambdaReturnType) {
 }
 
 TEST(QualifiersOrderTest, TemplateArguments) {
+  EXPECT_NO_CHANGES(QualifiersOrder, "template <typename T = int> class C {};\n"
+                                     "C<> c;\n");
   EXPECT_EQ(
       "template <typename T> class C {};\n"
       "const C<const int> *cCic = {};\n"
@@ -258,6 +260,54 @@ TEST(QualifiersOrderTest, TemplateArguments) {
                 "template <typename T1, typename T2> class C {};\n"
                 "const C<int const, float const> *cCic = {};\n"
                 "C<int const, float const> const *Cic_c = {};\n"));
+  EXPECT_EQ("template <typename T1, unsigned U1, typename T2> class C {};\n"
+            "const C<const int , 0, const float > *cCic = {};\n"
+            "const C<const int , 0, const float > *Cic_c = {};\n",
+            runCheckOnCode<QualifiersOrder>(
+                "template <typename T1, unsigned U1, typename T2> class C {};\n"
+                "const C<int const, 0, float const> *cCic = {};\n"
+                "C<int const, 0, float const> const *Cic_c = {};\n"));
+}
+
+TEST(QualifiersOrderTest, Macros) {
+  EXPECT_NO_CHANGES(
+      QualifiersOrder,
+      "#define VARIABLE const volatile int i = 0;\n"
+      "#define FUNCTION_DECL int const f(const volatile int i = 0);\n"
+      "#define FUNCTION_DEF int const f(const volatile int i = 0) {}\n"
+      "#define TYPEDEF typedef int const const_int;\n"
+      "#define TEMPLATE_DEF template <typename T1, typename T2,"
+      "                               unsigned U1, typename T3>"
+      "                     struct S {};\n"
+      "#define TEMPLATE_SPEC"
+      "     S<int const, const volatile float, 0, S<int, int, 1, int>>"
+      "\n"
+      "VARIABLE\n"
+      "FUNCTION_DECL\n"
+      "FUNCTION_DEF\n"
+      "TYPEDEF\n"
+      "TEMPLATE_DEF\n"
+      "TEMPLATE_SPEC\n");
+  EXPECT_NO_CHANGES(
+      QualifiersOrder,
+      "#define CONST const\n"
+      "\n"
+      "#define VARIABLE CONST volatile int i = 0;\n"
+      "#define FUNCTION_DECL int CONST f(CONST volatile int i = 0);\n"
+      "#define FUNCTION_DEF int CONST f(CONST volatile int i = 0) {}\n"
+      "#define TYPEDEF typedef int CONST CONST_int;\n"
+      "#define TEMPLATE_DEF template <typename T1, typename T2,"
+      "                               unsigned U1, typename T3>"
+      "                     struct S {};\n"
+      "#define TEMPLATE_SPEC"
+      "     S<int CONST, CONST volatile float, 0, S<int, int, 1, int>>"
+      "\n"
+      "VARIABLE\n"
+      "FUNCTION_DECL\n"
+      "FUNCTION_DEF\n"
+      "TYPEDEF\n"
+      "TEMPLATE_DEF\n"
+      "TEMPLATE_SPEC\n");
 }
 
 #else

@@ -36,34 +36,34 @@ const auto ca = 0;
 // CHECK-MESSAGES: :[[@LINE-1]]:1: warning: wrong order of qualifiers
 // CHECK-FIXES: auto const ca = 0;
 
-template <typename T> class C {};
-C<int> const Ci_c = {};
-C<int const> const Cic_c = {};
-const C<int> cCi = {};
-// CHECK-MESSAGES: :[[@LINE-1]]:1: warning: wrong order of qualifiers
-// CHECK-FIXES: C<int> const cCi = {};
-const C<int const> cCic = {};
-// CHECK-MESSAGES: :[[@LINE-1]]:1: warning: wrong order of qualifiers
-// CHECK-FIXES: C<int const> const cCic = {};
-
-// Typedefs
-typedef const int const_int;
-// CHECK-MESSAGES: :[[@LINE-1]]:1: warning: wrong order of qualifiers
-// CHECK-FIXES: typedef int const const_int;
-typedef const int *const_int_p;
-// CHECK-MESSAGES: :[[@LINE-1]]:1: warning: wrong order of qualifiers
-// CHECK-FIXES: typedef int const *const_int_p;
-typedef const int *const const_int_p_const;
-// CHECK-MESSAGES: :[[@LINE-1]]:1: warning: wrong order of qualifiers
-// CHECK-FIXES: typedef int const *const const_int_p_const;
 template <typename T>
 struct S {
   typedef int type;
   template <typename U>
   class D {};
 };
-typedef const S<int> *const const_Sic_p_const;
+
+S<int> const Si_c = {};
+S<int const> const Sic_c = {};
+const S<int> cSi = {};
 // CHECK-MESSAGES: :[[@LINE-1]]:1: warning: wrong order of qualifiers
+// CHECK-FIXES: S<int> const cSi = {};
+const S<int const> cSic = {};
+// CHECK-MESSAGES: :[[@LINE-1]]:1: warning: wrong order of qualifiers
+// CHECK-FIXES: S<int const> const cSic = {};
+
+// Typedefs
+typedef const int const_int;
+// CHECK-MESSAGES: :[[@LINE-1]]:9: warning: wrong order of qualifiers
+// CHECK-FIXES: typedef int const const_int;
+typedef const int *const_int_p;
+// CHECK-MESSAGES: :[[@LINE-1]]:9: warning: wrong order of qualifiers
+// CHECK-FIXES: typedef int const *const_int_p;
+typedef const int *const const_int_p_const;
+// CHECK-MESSAGES: :[[@LINE-1]]:9: warning: wrong order of qualifiers
+// CHECK-FIXES: typedef int const *const const_int_p_const;
+typedef const S<int> *const const_Sic_p_const;
+// CHECK-MESSAGES: :[[@LINE-1]]:9: warning: wrong order of qualifiers
 // CHECK-FIXES: typedef S<int> const *const const_Sic_p_const;
 typedef S<const int> *const Sci_p_const;
 // CHECK-MESSAGES: :[[@LINE-1]]:11: warning: wrong order of qualifiers
@@ -90,25 +90,34 @@ const int &cir = i;
 // CHECK-MESSAGES: :[[@LINE-1]]:1: warning: wrong order of qualifiers
 // CHECK-FIXES: int const &cir = i;
 
+// Static
+// TODO: attributes
+static volatile int const svic = 0;
+static int const *sicp = nullptr;
+volatile static int const vsic = 0;
+static const int *scip = nullptr;
+// CHECK-MESSAGES: :[[@LINE-1]]:1: warning: wrong order of qualifiers
+// CHECK-FIXES: static int const *scip = nullptr;
+
 // TemplatePointers
-C<int> const *Ci_cp = {};
-C<int const> const *cCic_cp = {};
-const C<int> *cCi_p = {};
+S<int> const *Si_cp = {};
+S<int const> const *cSic_cp = {};
+const S<int> *cSi_p = {};
 // CHECK-MESSAGES: :[[@LINE-1]]:1: warning: wrong order of qualifiers
-// CHECK-FIXES: C<int> const *cCi_p = {};
-const C<int const> *cCic_p = {};
+// CHECK-FIXES: S<int> const *cSi_p = {};
+const S<int const> *cSic_p = {};
 // CHECK-MESSAGES: :[[@LINE-1]]:1: warning: wrong order of qualifiers
-// CHECK-FIXES: C<int const> const *cCic_p = {};
+// CHECK-FIXES: S<int const> const *cSic_p = {};
 
 // TemplateReferences
-C<int> const &Ci_cr = Ci_c;
-const C<int> &cCi_r = Ci_c;
+S<int> const &Si_cr = Si_c;
+const S<int> &cSi_r = Si_c;
 // CHECK-MESSAGES: :[[@LINE-1]]:1: warning: wrong order of qualifiers
-// CHECK-FIXES: C<int> const &cCi_r = Ci_c;
-C<int const> const &Cic_cr = Cic_c;
-const C<int const> &cCic_r = Cic_c;
+// CHECK-FIXES: S<int> const &cSi_r = Si_c;
+S<int const> const &Sic_cr = Sic_c;
+const S<int const> &cSic_r = Sic_c;
 // CHECK-MESSAGES: :[[@LINE-1]]:1: warning: wrong order of qualifiers
-// CHECK-FIXES: C<int const> const &cCic_r = Cic_c;
+// CHECK-FIXES: S<int const> const &cSic_r = Sic_c;
 
 // NestedTypes
 S<int>::type const Si_tc = 0;
@@ -182,25 +191,35 @@ struct RS {
 };
 
 // TemplateArguments
-//  EXPECT_EQ(
-//      "template <typename T> class C {};\n"
-//      "C<int const> const *cCic = {};\n"
-//      "C<int const> const *Cic_c = {};\n",
-//      runCheckOnCode<QualifiersOrder>("template <typename T> class C {};\n"
-//                                      "const C<int const> *cCic = {};\n"
-//                                      "C<int const> const *Cic_c = {};\n"));
-//  EXPECT_EQ(
-//      "template <typename T> class C {};\n"
-//      "C<int const > const *cCic = {};\n"
-//      "C<int const > const *Cic_c = {};\n",
-//      runCheckOnCode<QualifiersOrder>("template <typename T> class C {};\n"
-//                                      "const C<const int> *cCic = {};\n"
-//                                      "C<const int> const *Cic_c = {};\n"));
-//  EXPECT_EQ("template <typename T1, typename T2> class C {};\n"
-//            "C<int const , float const > const *cCic = {};\n"
-//            "C<int const , float const > const *Cic_c = {};\n",
-//            runCheckOnCode<QualifiersOrder>(
-//                "template <typename T1, typename T2> class C {};\n"
-//                "const C<const int, const float> *cCic = {};\n"
-//                "C<const int, const float> const *Cic_c = {};\n"));
-//}
+S<int const> const *Sic_cp = {};
+S<const int> const *Sci_cp = {};
+// CHECK-MESSAGES: :[[@LINE-1]]:3: warning: wrong order of qualifiers
+// CHECK-FIXES: S<int const > const *Sci_cp = {};
+const S<const int> *cSci_p = {};
+// CHECK-MESSAGES: :[[@LINE-1]]:1: warning: wrong order of qualifiers
+// CHECK-MESSAGES: :[[@LINE-2]]:9: warning: wrong order of qualifiers
+// CHECK-FIXES: S<int const > const *cSci_p = {};
+
+template <typename T1, typename T2> class TC2 {};
+template <typename T1, unsigned U1, typename T2, unsigned U2> class TC4 {};
+
+const TC2<const int, const float> *cTC2ci_cf_p = {};
+// CHECK-MESSAGES: :[[@LINE-1]]:1: warning: wrong order of qualifiers
+// CHECK-MESSAGES: :[[@LINE-2]]:11: warning: wrong order of qualifiers
+// CHECK-MESSAGES: :[[@LINE-3]]:22: warning: wrong order of qualifiers
+// CHECK-FIXES: TC2<int const , float const > const *cTC2ci_cf_p = {};
+TC2<const int, const float> const *TC2ci_cf_cp = {};
+// CHECK-MESSAGES: :[[@LINE-1]]:5: warning: wrong order of qualifiers
+// CHECK-MESSAGES: :[[@LINE-2]]:16: warning: wrong order of qualifiers
+// CHECK-FIXES: TC2<int const , float const > const *TC2ci_cf_cp = {};
+
+TC4<int const, 0, float const, 0> const* TC4ic_fc_cp = {};
+const TC4<const int, 1, const float, 1> *cT42ci_cf_p = {};
+// CHECK-MESSAGES: :[[@LINE-1]]:1: warning: wrong order of qualifiers
+// CHECK-MESSAGES: :[[@LINE-2]]:11: warning: wrong order of qualifiers
+// CHECK-MESSAGES: :[[@LINE-3]]:25: warning: wrong order of qualifiers
+// CHECK-FIXES: TC4<int const , 1, float const , 1> const *cT42ci_cf_p = {};
+TC4<const int, 2, const float, 2> const *TC4ci_cf_cp = {};
+// CHECK-MESSAGES: :[[@LINE-1]]:5: warning: wrong order of qualifiers
+// CHECK-MESSAGES: :[[@LINE-2]]:19: warning: wrong order of qualifiers
+// CHECK-FIXES: TC4<int const , 2, float const , 2> const *TC4ci_cf_cp = {};
