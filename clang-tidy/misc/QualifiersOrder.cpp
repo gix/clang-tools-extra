@@ -42,7 +42,6 @@ struct ScalarEnumerationTraits<QualifiersOrder::QualifierAlignmentStyle> {
 } // namespace llvm
 
 namespace clang {
-namespace tidy {
 namespace {
 
 tok::TokenKind getTokenKind(SourceLocation Loc, const SourceManager &SM,
@@ -85,8 +84,9 @@ StringRef getAsString(const SourceManager &SM, const clang::ASTContext *Context,
     return StringRef();
 
   const char *Begin = SM.getCharacterData(R.getBegin());
-  const char *End = SM.getCharacterData(
-      Lexer::getLocForEndOfToken(R.getEnd(), 0, SM, Context->getLangOpts()));
+  const char *End = SM.getCharacterData(R.getEnd());
+  // const char *End = SM.getCharacterData(
+  //    Lexer::getLocForEndOfToken(R.getEnd(), 0, SM, Context->getLangOpts()));
 
   return StringRef(Begin, End - Begin);
 }
@@ -103,11 +103,38 @@ SourceRange findToken(const SourceManager &SM, const clang::ASTContext *Context,
     SourceLocation EndLoc =
         Lexer::getLocForEndOfToken(Loc, 0, SM, Context->getLangOpts());
     StringRef TokenText = getAsString(SM, Context, SourceRange(Loc, EndLoc));
-    if (TokenText == Text) {
+    if (TokenText == Text ||
+        (TokenText.back() == '>' &&
+         TokenText.substr(0, TokenText.size() - 1) == Text))
       return SourceRange(Loc, EndLoc);
-    }
     // fast-forward current token
     Loc = Lexer::getLocForEndOfToken(Loc, 0, SM, Context->getLangOpts());
+  }
+  // Not found token of this kind in the given range
+  return SourceRange();
+}
+
+SourceRange findTokenBackwards(const SourceManager &SM,
+                               const clang::ASTContext *Context,
+                               SourceLocation Loc, StringRef Text) {
+  assert(Loc.isValid());
+  for (;;) {
+    while (isWhitespace(*FullSourceLoc(Loc, SM).getCharacterData())) {
+      Loc = Loc.getLocWithOffset(-1);
+      assert(Loc.isValid());
+    }
+
+    // SourceLocation EndLoc = Loc;
+    Loc = Lexer::GetBeginningOfToken(Loc, SM, Context->getLangOpts());
+    SourceLocation EndLoc =
+        Lexer::getLocForEndOfToken(Loc, 0, SM, Context->getLangOpts());
+    StringRef TokenText = getAsString(SM, Context, SourceRange(Loc, EndLoc));
+    if (TokenText == Text)
+      return SourceRange(Loc, EndLoc);
+    Loc = Loc.getLocWithOffset(-1);
+    assert(Loc.isValid());
+    if (Loc.isInvalid())
+      break;
   }
   // Not found token of this kind in the given range
   return SourceRange();
@@ -191,36 +218,45 @@ Qualifiers getInnerTypeQualifiers(TypeLoc TL) {
 
 } // namespace
 
+namespace ast_matchers {
+
+const internal::VariadicDynCastAllOfMatcher<Decl, TypedefDecl> typedefDecl;
+
+AST_MATCHER(TypeLoc, isTemplateSpecializationTypeLoc) {
+  TypeLoc PointeeTL = getInnerPointeeLoc(Node).getUnqualifiedLoc();
+  if (PointeeTL.getTypeLocClass() == TypeLoc::TemplateSpecialization)
+    return true;
+  return false;
+}
+
+} // namespace ast_matchers
+
+namespace tidy {
+
 QualifiersOrder::QualifiersOrder(StringRef Name, ClangTidyContext *Context)
     : ClangTidyCheck(Name, Context),
-      QualifierAlignment(Options.get("QualifierAlignment", QAS_Left)) {}
+      // QualifierAlignment(Options.get("QualifierAlignment", QAS_Right)) {}
+      // QualifierAlignment(Options.get("QualifierAlignment", QAS_Left)) {}
+      QualifierAlignment(Options.get("QualifierAlignment", "Left") == "Right"
+                             ? QAS_Right
+                             : QAS_Left) {}
 
 void QualifiersOrder::storeOptions(ClangTidyOptions::OptionMap &Opts) {
-  Options.store(Opts, "QualifierAlignment", QualifierAlignment);
+  Options.store(Opts, "QualifierAlignment",
+                QualifierAlignment == QAS_Right ? "Right" : "Left");
   // TODO: QualifierOrder: CRV|CVR|RCV|RVC|VCR|VRC
 }
 
 void QualifiersOrder::registerMatchers(MatchFinder *Finder) {
   Finder->addMatcher(varDecl().bind("var"), this);
-  // ClassTemplateSpecializationDecl *CTSD;
-  // const TemplateArgumentList & TArgList = CTSD->getTemplateArgs();
-  //
-
-  // Finder->addMatcher(classTemplateSpecializationDecl(hasAnyTemplateArgument())
-  //                       .bind("class-template-arg"),
-  //                   this);
-
   Finder->addMatcher(functionDecl().bind("function"), this);
-  // Finder->addMatcher(typeLoc(isInTemplateInstantiation()).bind("type"),
-  // this);
-  // isInTemplateInstantiation -> isInTemplateSpecializationDecl
-  // classTemplateSpecializationDecl -> get arguments
-  // function templates
-  // classTemplateSpecializationDecl(hasAnyTemplateArgument())
-  // parmVarDecl
-  // TODO(mkurdej): declarations in if/for/while: ?Stmt()
-  // TODO(mkurdej): function/method arguments: functionDecl
-  // TODO(mkurdej): typedefs typedefType()
+  Finder->addMatcher(typedefDecl().bind("typedef"), this);
+  // Finder->addMatcher(typeLoc().bind("template-arg"), this);
+  // Finder->addMatcher(templateArgument().bind("template-arg"), this);
+  // pointerType(pointee(isConstQualified(), isInteger()))
+  Finder->addMatcher(
+      typeLoc(isTemplateSpecializationTypeLoc()).bind("template-spec-loc"),
+      this);
 }
 
 void QualifiersOrder::check(const MatchFinder::MatchResult &Result) {
@@ -241,6 +277,43 @@ void QualifiersOrder::check(const MatchFinder::MatchResult &Result) {
       return;
     checkQualifiers(SM, Context, FTL.getReturnLoc(),
                     SourceRange(Fun->getLocStart(), Fun->getLocation()));
+  } else if (auto TD = Result.Nodes.getStmtAs<TypedefDecl>("typedef")) {
+    checkQualifiers(SM, Context, TD->getTypeSourceInfo()->getTypeLoc(),
+                    TD->getSourceRange());
+  } else if (auto TSL = Result.Nodes.getStmtAs<TypeLoc>("template-spec-loc")) {
+    TypeLoc PointeeTL = getInnerPointeeLoc(*TSL).getUnqualifiedLoc();
+    auto TSTL = PointeeTL.getAs<TemplateSpecializationTypeLoc>();
+    if (TSTL.isNull())
+      return;
+
+    unsigned int NumArgs = TSTL.getNumArgs();
+    if (NumArgs == 0)
+      return;
+
+    SourceLocation StartLoc = TSTL.getLAngleLoc().getLocWithOffset(1);
+    for (unsigned int Arg = 0; Arg < NumArgs - 1; ++Arg) {
+      TemplateArgumentLoc TAL = TSTL.getArgLoc(Arg);
+      if (TAL.getArgument().getKind() != TemplateArgument::Type)
+        continue;
+      TypeLoc TL = TAL.getTypeSourceInfo()->getTypeLoc();
+      TemplateArgumentLoc NextTAL = TSTL.getArgLoc(Arg + 1);
+      // FIXME: EndLoc goes too far (and overlaps next TAL).
+      SourceLocation EndLoc = NextTAL.getSourceRange().getBegin();
+      // Find a comma ',' going backwards.
+      SourceRange SR = findTokenBackwards(SM, Context, EndLoc, ",");
+      assert(SR.isValid());
+      EndLoc = SR.getBegin();
+      checkQualifiers(SM, Context, TL, SourceRange(StartLoc, EndLoc));
+
+      StartLoc = forwardSkipWhitespaceAndComments(SM, Context,
+                                                  EndLoc.getLocWithOffset(1));
+    }
+    TemplateArgumentLoc TAL = TSTL.getArgLoc(NumArgs - 1);
+    if (TAL.getArgument().getKind() != TemplateArgument::Type)
+      return;
+    TypeLoc TL = TAL.getTypeSourceInfo()->getTypeLoc();
+    SourceLocation EndLoc = TSTL.getRAngleLoc();
+    checkQualifiers(SM, Context, TL, SourceRange(StartLoc, EndLoc));
   } else {
     llvm_unreachable("Invalid match");
   }
@@ -266,27 +339,59 @@ void QualifiersOrder::checkQualifiers(const SourceManager &SM,
 
   // Define insert location, respectively, left and right to the type.
   SourceLocation InsertLoc;
+  bool MaybeAddSpaceBefore = false, MaybeAddSpaceAfter = false;
   switch (QualifierAlignment) {
   case QAS_Left:
+    MaybeAddSpaceAfter = true;
     InsertLoc = R.getBegin();
+    if ((ConstR.getBegin() < InsertLoc) || (ConstR.getBegin() == InsertLoc)) {
+      // Already on the left
+      return;
+    }
     break;
   case QAS_Right:
+    MaybeAddSpaceBefore = true;
     InsertLoc = RHS.getBegin();
+    while (isWhitespace(*FullSourceLoc(InsertLoc, SM).getCharacterData())) {
+      InsertLoc = InsertLoc.getLocWithOffset(1);
+    }
+    assert(InsertLoc.isValid());
+    if (!(ConstR.getBegin() < InsertLoc)) {
+      // Already on the right
+      return;
+    }
     break;
   default:
     llvm_unreachable("Invalid QualifierAlignmentStyle");
   }
-  if (ConstR.getBegin() != InsertLoc) {
-    auto Diag = diag(R.getBegin(), "wrong order of qualifiers");
-    // Move qualifier: insert first and then remove.
-    CharSourceRange CharRange = CharSourceRange::getCharRange(ConstR);
-    Diag << FixItHint::CreateInsertionFromRange(InsertLoc, CharRange);
-    // FixItHint::CreateRemoval removes a closed (token) range [a, b] and we
-    // want to remove a half-open (char) range [a, b).
-    SourceRange RemovalR(ConstR.getBegin(),
-                         ConstR.getEnd().getLocWithOffset(-1));
-    Diag << FixItHint::CreateRemoval(RemovalR);
-  }
+
+  auto Diag = diag(R.getBegin(), "wrong order of qualifiers");
+
+  // Add a space if necessary
+  const char *ConstFront = SM.getCharacterData(InsertLoc.getLocWithOffset(-1));
+  assert(ConstFront);
+  bool MustAddSpaceBefore =
+      MaybeAddSpaceBefore && ConstFront && !isWhitespace(*ConstFront);
+  if (MustAddSpaceBefore)
+    Diag << FixItHint::CreateInsertion(InsertLoc, /*Code=*/" ");
+
+  // Move qualifier: insert first and then remove.
+  CharSourceRange CharRange = CharSourceRange::getCharRange(ConstR);
+  Diag << FixItHint::CreateInsertionFromRange(InsertLoc, CharRange);
+
+  // Add a space if necessary
+  const char *ConstBack =
+      SM.getCharacterData(ConstR.getEnd().getLocWithOffset(-1));
+  assert(ConstBack);
+  bool MustAddSpaceAfter =
+      MaybeAddSpaceAfter && ConstBack && !isWhitespace(*ConstBack);
+  if (MustAddSpaceAfter)
+    Diag << FixItHint::CreateInsertion(InsertLoc, /*Code=*/" ");
+
+  // FixItHint::CreateRemoval removes a closed (token) range [a, b] and we
+  // want to remove a half-open (char) range [a, b).
+  SourceRange RemovalR(ConstR.getBegin(), ConstR.getEnd().getLocWithOffset(-1));
+  Diag << FixItHint::CreateRemoval(RemovalR);
 }
 
 } // namespace tidy
