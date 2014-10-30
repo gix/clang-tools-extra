@@ -47,7 +47,8 @@ TEST(QualifiersOrderTest, CVROrder) {
   EXPECT_NO_CHANGES(QualifiersOrder, "const volatile int i = 0;");
   EXPECT_EQ("const int volatile i = 0;",
             runCheckOnCode<QualifiersOrder>("int const volatile i = 0;"));
-  EXPECT_NO_CHANGES(QualifiersOrder, "int *const volatile __restrict i = nullptr;");
+  EXPECT_NO_CHANGES(QualifiersOrder,
+                    "int *const volatile __restrict i = nullptr;");
 }
 
 TEST(QualifiersOrderTest, Basic) {
@@ -57,6 +58,9 @@ TEST(QualifiersOrderTest, Basic) {
   EXPECT_NO_CHANGES(QualifiersOrder, "/*const*/ const int i = 0;");
   EXPECT_EQ("const   int /*const*/ i = 0;",
             runCheckOnCode<QualifiersOrder>("int /*const*/ const   i = 0;"));
+  EXPECT_EQ("__attribute__((unused)) const   int /*const*/ i = 0;",
+            runCheckOnCode<QualifiersOrder>(
+                "__attribute__((unused)) int /*const*/ const   i = 0;"));
   EXPECT_NO_CHANGES(QualifiersOrder, "const int ci = 0;");
   EXPECT_NO_CHANGES(QualifiersOrder, "const /**/ int ci = 0;");
   EXPECT_EQ("const int ic = 0;\n",
@@ -80,11 +84,14 @@ TEST(QualifiersOrderTest, Basic) {
 }
 
 TEST(QualifiersOrderTest, Static) {
-  EXPECT_NO_CHANGES(QualifiersOrder, "static const volatile int i = 0;\n");
+  EXPECT_NO_CHANGES(QualifiersOrder, "static const volatile int i = 0;");
   EXPECT_NO_CHANGES(QualifiersOrder,
-                    "static const int f(const volatile int i = 0);\n");
+                    "static const int f(const volatile int i = 0);");
   EXPECT_NO_CHANGES(QualifiersOrder,
-                    "static const int f(const volatile int i = 0) {}\n");
+                    "static const int f(const volatile int i = 0) {}");
+  EXPECT_EQ(
+      "static const int volatile i = 0;",
+      runCheckOnCode<QualifiersOrder>("static int const volatile i = 0;"));
 }
 
 TEST(QualifiersOrderTest, TemplatesBasic) {
@@ -104,7 +111,7 @@ TEST(QualifiersOrderTest, TemplatesBasic) {
 TEST(QualifiersOrderTest, Pointers) {
   EXPECT_NO_CHANGES(QualifiersOrder, "const int *cip;\n");
   EXPECT_NO_CHANGES(QualifiersOrder, "const volatile int *cip;\n");
-  //EXPECT_NO_CHANGES(QualifiersOrder, "volatile const int *cip;\n");
+  // EXPECT_NO_CHANGES(QualifiersOrder, "volatile const int *cip;\n");
   EXPECT_EQ("const int *cip;\n",
             runCheckOnCode<QualifiersOrder>("int const *cip;\n"));
   EXPECT_NO_CHANGES(QualifiersOrder, "const int *cip = nullptr;");
@@ -183,13 +190,12 @@ TEST(QualifiersOrderTest, Namespaces) {
             "} // namespace out\n"
             "const out::in::C cC = {};\n"
             "const out::in::C Cc = {};\n",
-            runCheckOnCode<QualifiersOrder>(
-                "namespace out { namespace in {\n"
-                "class C {};\n"
-                "} // namespace in\n"
-                "} // namespace out\n"
-                "const out::in::C cC = {};\n"
-                "out::in::C const Cc = {};\n"));
+            runCheckOnCode<QualifiersOrder>("namespace out { namespace in {\n"
+                                            "class C {};\n"
+                                            "} // namespace in\n"
+                                            "} // namespace out\n"
+                                            "const out::in::C cC = {};\n"
+                                            "out::in::C const Cc = {};\n"));
   EXPECT_EQ("namespace out { namespace in {\n"
             "template <typename T> class C {};\n"
             "} // namespace in\n"
@@ -228,12 +234,27 @@ TEST(QualifiersOrderTest, FunctionMethodLambdaArguments) {
 TEST(QualifiersOrderTest, FunctionMethodLambdaReturnType) {
   EXPECT_EQ("const int f();",
             runCheckOnCode<QualifiersOrder>("int const f();"));
+  // FIXME: Put const after attribute.
+  EXPECT_EQ(
+      "const int __attribute__((unused)) f() __attribute__((unused));",
+      runCheckOnCode<QualifiersOrder>(
+          "int const __attribute__((unused)) f() __attribute__((unused));"));
+  EXPECT_EQ("const int __cdecl f() __attribute__((unused));",
+            runCheckOnCode<QualifiersOrder>(
+                "int const __cdecl f() __attribute__((unused));"));
   EXPECT_EQ("struct S {\n"
             "const int f(const int i = 0);\n"
             "};\n",
             runCheckOnCode<QualifiersOrder>("struct S {\n"
                                             "int const f(int const i = 0);\n"
                                             "};\n"));
+  EXPECT_EQ("const int (parenFunction)();",
+            runCheckOnCode<QualifiersOrder>("int const (parenFunction)();"));
+  EXPECT_EQ(
+      "typedef const int TypedefFunction();\n"
+      "TypedefFunction f;\n",
+      runCheckOnCode<QualifiersOrder>("typedef int const TypedefFunction();\n"
+                                      "TypedefFunction f;\n"));
 }
 
 TEST(QualifiersOrderTest, TemplateArguments) {

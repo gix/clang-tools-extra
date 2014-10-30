@@ -260,42 +260,56 @@ void QualifiersOrder::registerMatchers(MatchFinder *Finder) {
       this);
 }
 
+void outputLocation(const SourceManager &SM, SourceLocation Loc,
+                    StringRef Text = "") {
+  llvm::errs() << "*****" << Text << "\n";
+  Loc.print(llvm::errs(), SM);
+  llvm::errs() << "*****\n";
+}
+
 void QualifiersOrder::check(const MatchFinder::MatchResult &Result) {
   const SourceManager &SM = *Result.SourceManager;
   const ASTContext *Context = Result.Context;
 
   if (auto Var = Result.Nodes.getStmtAs<VarDecl>("var")) {
-    SourceLocation VarNameLoc = Var->getLocation();
-    if (VarNameLoc.isInvalid())
-      return;
-    VarNameLoc = Lexer::GetBeginningOfToken(VarNameLoc.getLocWithOffset(-1), SM,
-                                            Context->getLangOpts());
     TypeSourceInfo *TIS = Var->getTypeSourceInfo();
     if (!TIS)
       return;
+    SourceLocation VarNameLoc = Var->getLocation();
+    if (VarNameLoc.isInvalid())
+      return;
+    //VarNameLoc = Lexer::GetBeginningOfToken(VarNameLoc.getLocWithOffset(-1), SM,
+    //                                        Context->getLangOpts());
     checkQualifiers(SM, Context, TIS->getTypeLoc(),
                     SourceRange(Var->getLocStart(), VarNameLoc));
   } else if (auto Fun = Result.Nodes.getStmtAs<FunctionDecl>("function")) {
+    SourceRange R(Fun->getLocStart(), Fun->getLocation());
     TypeSourceInfo *TIS = Fun->getTypeSourceInfo();
     if (!TIS)
       return;
     TypeLoc FunTL = TIS->getTypeLoc();
-    if (!FunTL)
-      return;
-    auto FunTLC = FunTL.getTypeLocClass(); // TMP
-    if (FunTL.getTypeLocClass() == TypeLoc::Attributed) {
-      auto ATL = FunTL.getAs<AttributedTypeLoc>();
-      TypeLoc ModTL = ATL.getModifiedLoc();
-      auto ModTLC = ModTL.getTypeLocClass(); // TMP
-      FunTL = ModTL;
+    if (auto ATL = FunTL.getAs<AttributedTypeLoc>())
+      FunTL = ATL.getNextTypeLoc();
+    if (auto PTL = FunTL.getAs<ParenTypeLoc>())
+      FunTL = PTL.getNextTypeLoc();
+    if (auto TTL = FunTL.getAs<TypedefTypeLoc>()) {
+      TypedefNameDecl *TND = TTL.getTypedefNameDecl();
+      if (!TND)
+        return;
+      TIS = TND->getTypeSourceInfo();
+      if (!TIS)
+        return;
+      FunTL = TIS->getTypeLoc();
+      R = FunTL.getSourceRange();
     }
-    FunTLC = FunTL.getTypeLocClass(); // TMP
+
+    if (FunTL.getTypeLocClass() != TypeLoc::FunctionProto)
+      return;
     auto FTL = FunTL.getAs<FunctionTypeLoc>();
     if (!FTL)
       return;
-    auto FLocStart = Fun->getLocStart();
-    checkQualifiers(SM, Context, FTL.getReturnLoc(),
-                    SourceRange(Fun->getLocStart(), Fun->getLocation()));
+
+    checkQualifiers(SM, Context, FTL.getReturnLoc(), R);
   } else if (auto TD = Result.Nodes.getStmtAs<TypedefDecl>("typedef")) {
     SourceRange R = TD->getSourceRange();
     if (R.isInvalid() || R.getBegin().isMacroID())
@@ -385,7 +399,7 @@ void QualifiersOrder::checkQualifiers(const SourceManager &SM,
   switch (QualifierAlignment) {
   case QAS_Left:
     MaybeAddSpaceAfter = true;
-    InsertLoc = R.getBegin();
+    InsertLoc = MiddleLoc;
     // FIXME: Handle 'static' keyword.
     if ((ConstR.getBegin() < MiddleLoc) || (ConstR.getBegin() == MiddleLoc)) {
       // Already on the left.
