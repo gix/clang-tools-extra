@@ -96,7 +96,13 @@ static const int *scip = nullptr;
 volatile const static int vcsi = 0;
 static int const *sicp = nullptr;
 // CHECK-MESSAGES: :[[@LINE-1]]:1: warning: wrong order of qualifiers
-// CHECK-FIXES: const static int *sicp = nullptr;
+// CHECK-FIXES: static const int *sicp = nullptr;
+
+// Attributes
+const int __cdecl ci_cdeclf();
+int const __cdecl ic_cdeclf();
+// CHECK-MESSAGES: :[[@LINE-1]]:1: warning: wrong order of qualifiers
+// CHECK-FIXES: const int __cdecl ic_cdeclf();
 
 // TemplatePointers
 const S<int> *cSi_p = {};

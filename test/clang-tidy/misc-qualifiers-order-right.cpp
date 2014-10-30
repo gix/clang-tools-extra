@@ -91,13 +91,18 @@ const int &cir = i;
 // CHECK-FIXES: int const &cir = i;
 
 // Static
-// TODO: attributes
 static volatile int const svic = 0;
 static int const *sicp = nullptr;
 volatile static int const vsic = 0;
 static const int *scip = nullptr;
 // CHECK-MESSAGES: :[[@LINE-1]]:1: warning: wrong order of qualifiers
 // CHECK-FIXES: static int const *scip = nullptr;
+
+// Attributes
+int const __cdecl ic_cdeclf();
+const int __cdecl ci_cdeclf();
+// CHECK-MESSAGES: :[[@LINE-1]]:1: warning: wrong order of qualifiers
+// CHECK-FIXES: int const __cdecl ci_cdeclf();
 
 // TemplatePointers
 S<int> const *Si_cp = {};
