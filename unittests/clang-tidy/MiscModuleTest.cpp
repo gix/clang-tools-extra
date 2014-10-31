@@ -281,13 +281,17 @@ TEST(QualifiersOrderTest, TemplateArguments) {
                 "template <typename T1, typename T2> class C {};\n"
                 "const C<int const, float const> *cCic = {};\n"
                 "C<int const, float const> const *Cic_c = {};\n"));
-  EXPECT_EQ("template <typename T1, unsigned U1, typename T2> class C {};\n"
-            "const C<const int , 0, const float > *cCic = {};\n"
-            "const C<const int , 0, const float > *Cic_c = {};\n",
+  EXPECT_EQ("template <typename T1, unsigned U1, "
+            "          typename T2, unsigned U2>\n"
+            "class C {};\n"
+            "const C<const int , 0, const float , 0> *cCic = {};\n"
+            "const C<const int , 0, const float , 0> *Cic_c = {};\n",
             runCheckOnCode<QualifiersOrder>(
-                "template <typename T1, unsigned U1, typename T2> class C {};\n"
-                "const C<int const, 0, float const> *cCic = {};\n"
-                "C<int const, 0, float const> const *Cic_c = {};\n"));
+                "template <typename T1, unsigned U1, "
+                "          typename T2, unsigned U2>\n"
+                "class C {};\n"
+                "const C<int const, 0, float const, 0> *cCic = {};\n"
+                "C<int const, 0, float const, 0> const *Cic_c = {};\n"));
 }
 
 TEST(QualifiersOrderTest, Macros) {
