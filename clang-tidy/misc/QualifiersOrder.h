@@ -21,6 +21,7 @@ namespace yaml {
 
 namespace clang {
 namespace tidy {
+namespace misc {
 
 /// \brief Order (before/after type) of 'const' ('restrict' and 'volatile'?) qualifiers
 class QualifiersOrder: public ClangTidyCheck {
@@ -51,6 +52,7 @@ private:
   QualifierAlignmentStyle QualifierAlignment;
 };
 
+} // namespace misc
 } // namespace tidy
 } // namespace clang
 

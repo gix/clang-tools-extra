@@ -1,5 +1,4 @@
-// RUN: $(dirname %s)/check_clang_tidy_fix.sh %s misc-qualifiers-order %t -config="{CheckOptions: [{key: misc-qualifiers-order.QualifierAlignment, value: Right}]}" --
-// REQUIRES: shell
+// RUN: %check_clang_tidy %s misc-qualifiers-order %t -config="{CheckOptions: [{key: misc-qualifiers-order.QualifierAlignment, value: Right}]}" --
 
 // CVROrder
 int const volatile icv = 0;

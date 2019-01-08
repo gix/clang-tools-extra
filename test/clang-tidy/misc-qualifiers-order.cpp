@@ -1,5 +1,4 @@
-// RUN: $(dirname %s)/check_clang_tidy_fix.sh %s misc-qualifiers-order %t --
-// REQUIRES: shell
+// RUN: %check_clang_tidy %s misc-qualifiers-order %t --
 
 // CVROrder
 const int volatile civ = 0;

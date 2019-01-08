@@ -15,7 +15,7 @@
 #include <sstream>
 
 using namespace clang::ast_matchers;
-using clang::tidy::QualifiersOrder;
+using clang::tidy::misc::QualifiersOrder;
 
 namespace llvm {
 namespace yaml {
@@ -93,7 +93,8 @@ SourceRange findToken(const SourceManager &SM, const clang::ASTContext *Context,
         Lexer::getLocForEndOfToken(Loc, 0, SM, Context->getLangOpts());
     StringRef TokenText = getAsString(SM, Context, SourceRange(Loc, EndLoc));
     if (TokenText == Text ||
-        (TokenText.back() == '>' &&
+        (!TokenText.empty() &&
+         TokenText.back() == '>' &&
          TokenText.substr(0, TokenText.size() - 1) == Text))
       return SourceRange(Loc, EndLoc);
     // fast-forward current token
@@ -205,8 +206,6 @@ Qualifiers getInnerTypeQualifiers(TypeLoc TL) {
 
 namespace ast_matchers {
 
-const internal::VariadicDynCastAllOfMatcher<Decl, TypedefDecl> typedefDecl;
-
 AST_MATCHER(TypeLoc, isTemplateSpecializationTypeLoc) {
   TypeLoc PointeeTL = getInnerPointeeLoc(Node).getUnqualifiedLoc();
   if (PointeeTL.getTypeLocClass() == TypeLoc::TemplateSpecialization)
@@ -217,6 +216,7 @@ AST_MATCHER(TypeLoc, isTemplateSpecializationTypeLoc) {
 } // namespace ast_matchers
 
 namespace tidy {
+namespace misc {
 
 QualifiersOrder::QualifiersOrder(StringRef Name, ClangTidyContext *Context)
     : ClangTidyCheck(Name, Context),
@@ -244,18 +244,18 @@ void QualifiersOrder::check(const MatchFinder::MatchResult &Result) {
   const SourceManager &SM = *Result.SourceManager;
   const ASTContext *Context = Result.Context;
 
-  if (auto Var = Result.Nodes.getStmtAs<VarDecl>("var")) {
-    TypeSourceInfo *TIS = Var->getTypeSourceInfo();
-    if (!TIS)
+  if (auto Var = Result.Nodes.getNodeAs<VarDecl>("var")) {
+    TypeSourceInfo *TSI = Var->getTypeSourceInfo();
+    if (!TSI)
       return;
-    checkQualifiers(SM, Context, TIS->getTypeLoc(),
-                    SourceRange(Var->getLocStart(), Var->getLocation()));
-  } else if (auto Fun = Result.Nodes.getStmtAs<FunctionDecl>("function")) {
-    SourceRange R(Fun->getLocStart(), Fun->getLocation());
-    TypeSourceInfo *TIS = Fun->getTypeSourceInfo();
-    if (!TIS)
+    checkQualifiers(SM, Context, TSI->getTypeLoc(),
+                    SourceRange(Var->getOuterLocStart(), Var->getLocation()));
+  } else if (auto Fun = Result.Nodes.getNodeAs<FunctionDecl>("function")) {
+    SourceRange R(Fun->getOuterLocStart(), Fun->getLocation());
+    TypeSourceInfo *TSI = Fun->getTypeSourceInfo();
+    if (!TSI)
       return;
-    TypeLoc FunTL = TIS->getTypeLoc();
+    TypeLoc FunTL = TSI->getTypeLoc();
     if (auto ATL = FunTL.getAs<AttributedTypeLoc>())
       FunTL = ATL.getNextTypeLoc();
     if (auto PTL = FunTL.getAs<ParenTypeLoc>())
@@ -264,15 +264,15 @@ void QualifiersOrder::check(const MatchFinder::MatchResult &Result) {
       TypedefNameDecl *TND = TTL.getTypedefNameDecl();
       if (!TND)
         return;
-      TIS = TND->getTypeSourceInfo();
-      if (!TIS)
+      TSI = TND->getTypeSourceInfo();
+      if (!TSI)
         return;
-      FunTL = TIS->getTypeLoc();
+      FunTL = TSI->getTypeLoc();
       R = FunTL.getSourceRange();
     }
     if (auto FTL = FunTL.getAs<FunctionTypeLoc>())
       checkQualifiers(SM, Context, FTL.getReturnLoc(), R);
-  } else if (auto TD = Result.Nodes.getStmtAs<TypedefDecl>("typedef")) {
+  } else if (auto TD = Result.Nodes.getNodeAs<TypedefDecl>("typedef")) {
     SourceRange R = TD->getSourceRange();
     if (R.isInvalid() || R.getBegin().isMacroID())
       return;
@@ -283,7 +283,7 @@ void QualifiersOrder::check(const MatchFinder::MatchResult &Result) {
         forwardSkipWhitespaceAndComments(SM, Context, PastTypedefLoc);
     R.setBegin(PastTypedefLoc);
     checkQualifiers(SM, Context, TD->getTypeSourceInfo()->getTypeLoc(), R);
-  } else if (auto TSL = Result.Nodes.getStmtAs<TypeLoc>("template-spec-loc")) {
+  } else if (auto TSL = Result.Nodes.getNodeAs<TypeLoc>("template-spec-loc")) {
     TypeLoc PointeeTL = getInnerPointeeLoc(*TSL).getUnqualifiedLoc();
     auto TSTL = PointeeTL.getAs<TemplateSpecializationTypeLoc>();
     if (!TSTL)
@@ -342,6 +342,9 @@ void QualifiersOrder::checkQualifiers(const SourceManager &SM,
   // Find const qualifier of the inner (leftmost) type.
   SourceRange LHS = getRangeBeforeType(TL, R.getBegin());
   SourceRange RHS = getRangeAfterType(SM, Context, TL, R.getEnd());
+  if (LHS.isInvalid() || RHS.isInvalid())
+    return;
+
   SourceRange ConstR = findQualifier(SM, Context, LHS, RHS, "const");
   if (ConstR.isInvalid()) {
     // It happens when const comes from a macro expansion.
@@ -407,5 +410,6 @@ void QualifiersOrder::checkQualifiers(const SourceManager &SM,
   Diag << FixItHint::CreateRemoval(RemovalR);
 }
 
+} // namespace misc
 } // namespace tidy
 } // namespace clang
