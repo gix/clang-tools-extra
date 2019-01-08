@@ -83,9 +83,9 @@ SourceRange findToken(const SourceManager &SM, const clang::ASTContext *Context,
   if (SR.isInvalid())
     return SourceRange();
   assert(SR.isValid());
+  SR = SM.getExpansionRange(SR).getAsRange();
   for (SourceLocation Loc = SR.getBegin(); Loc < SR.getEnd();) {
-    // FIXME(mkurdej): Loc can actually be past SR.getEnd()
-    while (isWhitespace(*FullSourceLoc(Loc, SM).getCharacterData())) {
+    while (isWhitespace(*SM.getCharacterData(Loc))) {
       Loc = Loc.getLocWithOffset(1);
     }
 
@@ -93,8 +93,7 @@ SourceRange findToken(const SourceManager &SM, const clang::ASTContext *Context,
         Lexer::getLocForEndOfToken(Loc, 0, SM, Context->getLangOpts());
     StringRef TokenText = getAsString(SM, Context, SourceRange(Loc, EndLoc));
     if (TokenText == Text ||
-        (!TokenText.empty() &&
-         TokenText.back() == '>' &&
+        (!TokenText.empty() && TokenText.back() == '>' &&
          TokenText.substr(0, TokenText.size() - 1) == Text))
       return SourceRange(Loc, EndLoc);
     // fast-forward current token
@@ -109,7 +108,7 @@ SourceRange findTokenBackwards(const SourceManager &SM,
                                SourceLocation Loc, StringRef Text) {
   assert(Loc.isValid());
   for (;;) {
-    while (isWhitespace(*FullSourceLoc(Loc, SM).getCharacterData())) {
+    while (isWhitespace(*SM.getCharacterData(Loc))) {
       Loc = Loc.getLocWithOffset(-1);
       assert(Loc.isValid());
     }
