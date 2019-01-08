@@ -1,43 +1,15 @@
 #include "ClangTidyTest.h"
-#include "misc/ArgumentCommentCheck.h"
 #include "misc/QualifiersOrder.h"
 #include "gtest/gtest.h"
 
 // RUN: echo '{ Checks: "-*,misc-qualifiers-order"}' > %t/.clang-tidy
 // RUN: echo '{ Checks: "-*,misc-qualifiers-order", CheckOptions: [{key: misc-qualifiers-order.QualifierAlignment, value: Left}]}' > %t/.clang-tidy
 
+using namespace clang::tidy::misc;
+
 namespace clang {
 namespace tidy {
 namespace test {
-
-#define EXPECT_NO_CHANGES(Check, Code)                                         \
-  EXPECT_EQ(Code, runCheckOnCode<Check>(Code))
-
-TEST(ArgumentCommentCheckTest, CorrectComments) {
-  EXPECT_NO_CHANGES(ArgumentCommentCheck,
-                    "void f(int x, int y); void g() { f(/*x=*/0, /*y=*/0); }");
-  EXPECT_NO_CHANGES(ArgumentCommentCheck,
-                    "struct C { C(int x, int y); }; C c(/*x=*/0, /*y=*/0);");
-}
-
-TEST(ArgumentCommentCheckTest, ThisEditDistanceAboveThreshold) {
-  EXPECT_NO_CHANGES(ArgumentCommentCheck,
-                    "void f(int xxx); void g() { f(/*xyz=*/0); }");
-}
-
-TEST(ArgumentCommentCheckTest, OtherEditDistanceAboveThreshold) {
-  EXPECT_EQ("void f(int xxx, int yyy); void g() { f(/*xxx=*/0, 0); }",
-            runCheckOnCode<ArgumentCommentCheck>(
-                "void f(int xxx, int yyy); void g() { f(/*Xxx=*/0, 0); }"));
-  EXPECT_EQ("struct C { C(int xxx, int yyy); }; C c(/*xxx=*/0, 0);",
-            runCheckOnCode<ArgumentCommentCheck>(
-                "struct C { C(int xxx, int yyy); }; C c(/*Xxx=*/0, 0);"));
-}
-
-TEST(ArgumentCommentCheckTest, OtherEditDistanceBelowThreshold) {
-  EXPECT_NO_CHANGES(ArgumentCommentCheck,
-                    "void f(int xxx, int yyy); void g() { f(/*xxy=*/0, 0); }");
-}
 
 #define QualifiersOrderRight 0
 
@@ -148,7 +120,7 @@ TEST(QualifiersOrderTest, TemplatePointers) {
 TEST(QualifiersOrderTest, TemplateReferences) {
   EXPECT_NO_CHANGES(QualifiersOrder, "template <typename T> class C {};\n"
                                      "C<int> Ci = {};\n"
-                                     "const C<int> &cCi = C;\n");
+                                     "const C<int> &cCi = Ci;\n");
   EXPECT_NO_CHANGES(QualifiersOrder, "template <typename T> class C {};\n"
                                      "C<const int> Cci = {};\n"
                                      "const C<const int> &cCci = Cci;\n");
@@ -166,19 +138,19 @@ TEST(QualifiersOrderTest, TemplateReferences) {
 }
 
 TEST(QualifiersOrderTest, NestedTypes) {
-  EXPECT_EQ("template <typename T> class C { typedef int type; };\n"
-            "const C<int>::type Ci_c = Ci;\n"
-            "const C<const int>::type Cci_c = Cci;\n",
+  EXPECT_EQ("template <typename T> class C { public: typedef int type; };\n"
+            "const C<int>::type Ci_c = {};\n"
+            "const C<const int>::type Cci_c = {};\n",
             runCheckOnCode<QualifiersOrder>(
-                "template <typename T> class C { typedef int type; };\n"
-                "C<int>::type const Ci_c = Ci;\n"
-                "C<const int>::type const Cci_c = Cci;\n"));
+                "template <typename T> class C { public: typedef int type; };\n"
+                "C<int>::type const Ci_c = {};\n"
+                "C<const int>::type const Cci_c = {};\n"));
   EXPECT_EQ(
-      "template <typename T> struct C { template <typename U> class D; };\n"
+      "template <typename T> struct C { template <typename U> class D {}; };\n"
       "const C<int>::D<float> CDc = {};\n"
       "const C<const int>::D<const float> cCD = {};\n",
       runCheckOnCode<QualifiersOrder>(
-          "template <typename T> struct C { template <typename U> class D; };\n"
+          "template <typename T> struct C { template <typename U> class D {}; };\n"
           "C<int>::D<float> const CDc = {};\n"
           "C<const int>::D<const float> const cCD = {};\n"));
 }
@@ -299,13 +271,13 @@ TEST(QualifiersOrderTest, Macros) {
       QualifiersOrder,
       "#define VARIABLE const volatile int i = 0;\n"
       "#define FUNCTION_DECL int const f(const volatile int i = 0);\n"
-      "#define FUNCTION_DEF int const f(const volatile int i = 0) {}\n"
+      "#define FUNCTION_DEF int const f(const volatile int i) { return i; }\n"
       "#define TYPEDEF typedef int const const_int;\n"
       "#define TEMPLATE_DEF template <typename T1, typename T2,"
       "                               unsigned U1, typename T3>"
       "                     struct S {};\n"
       "#define TEMPLATE_SPEC"
-      "     S<int const, const volatile float, 0, S<int, int, 1, int>>"
+      "     S<int const, const volatile float, 0, S<int, int, 1, int>> s;"
       "\n"
       "VARIABLE\n"
       "FUNCTION_DECL\n"
@@ -319,13 +291,13 @@ TEST(QualifiersOrderTest, Macros) {
       "\n"
       "#define VARIABLE CONST volatile int i = 0;\n"
       "#define FUNCTION_DECL int CONST f(CONST volatile int i = 0);\n"
-      "#define FUNCTION_DEF int CONST f(CONST volatile int i = 0) {}\n"
+      "#define FUNCTION_DEF int CONST f(CONST volatile int i) { return i; }\n"
       "#define TYPEDEF typedef int CONST CONST_int;\n"
       "#define TEMPLATE_DEF template <typename T1, typename T2,"
       "                               unsigned U1, typename T3>"
       "                     struct S {};\n"
       "#define TEMPLATE_SPEC"
-      "     S<int CONST, CONST volatile float, 0, S<int, int, 1, int>>"
+      "     S<int CONST, CONST volatile float, 0, S<int, int, 1, int>> s;"
       "\n"
       "VARIABLE\n"
       "FUNCTION_DECL\n"
