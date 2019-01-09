@@ -14,7 +14,7 @@ int &ir = i;
 /*const*/ int const c_ic1 = 0;
 const   int /*const*/ cic_c = 0;
 // CHECK-MESSAGES: :[[@LINE-1]]:1: warning: wrong order of qualifiers
-// CHECK-FIXES: int const   /*const*/ cic_c = 0;
+// CHECK-FIXES:   int const /*const*/ cic_c = 0;
 int const ci = 0;
 int const /**/ ci_ = 0;
 const int ic = 0;
@@ -66,7 +66,7 @@ typedef const S<int> *const const_Sic_p_const;
 // CHECK-FIXES: typedef S<int> const *const const_Sic_p_const;
 typedef S<const int> *const Sci_p_const;
 // CHECK-MESSAGES: :[[@LINE-1]]:11: warning: wrong order of qualifiers
-// CHECK-FIXES: typedef S<int const > *const Sci_p_const;
+// CHECK-FIXES: typedef S<int const> *const Sci_p_const;
 
 // Pointers
 int const *icp;
@@ -198,11 +198,11 @@ struct RS {
 S<int const> const *Sic_cp = {};
 S<const int> const *Sci_cp = {};
 // CHECK-MESSAGES: :[[@LINE-1]]:3: warning: wrong order of qualifiers
-// CHECK-FIXES: S<int const > const *Sci_cp = {};
+// CHECK-FIXES: S<int const> const *Sci_cp = {};
 const S<const int> *cSci_p = {};
 // CHECK-MESSAGES: :[[@LINE-1]]:1: warning: wrong order of qualifiers
 // CHECK-MESSAGES: :[[@LINE-2]]:9: warning: wrong order of qualifiers
-// CHECK-FIXES: S<int const > const *cSci_p = {};
+// CHECK-FIXES: S<int const> const *cSci_p = {};
 
 template <typename T1, typename T2> class TC2 {};
 template <typename T1, unsigned U1, typename T2, unsigned U2> class TC4 {};
@@ -211,22 +211,22 @@ const TC2<const int, const float> *cTC2ci_cf_p = {};
 // CHECK-MESSAGES: :[[@LINE-1]]:1: warning: wrong order of qualifiers
 // CHECK-MESSAGES: :[[@LINE-2]]:11: warning: wrong order of qualifiers
 // CHECK-MESSAGES: :[[@LINE-3]]:22: warning: wrong order of qualifiers
-// CHECK-FIXES: TC2<int const , float const > const *cTC2ci_cf_p = {};
+// CHECK-FIXES: TC2<int const, float const> const *cTC2ci_cf_p = {};
 TC2<const int, const float> const *TC2ci_cf_cp = {};
 // CHECK-MESSAGES: :[[@LINE-1]]:5: warning: wrong order of qualifiers
 // CHECK-MESSAGES: :[[@LINE-2]]:16: warning: wrong order of qualifiers
-// CHECK-FIXES: TC2<int const , float const > const *TC2ci_cf_cp = {};
+// CHECK-FIXES: TC2<int const, float const> const *TC2ci_cf_cp = {};
 
 TC4<int const, 0, float const, 0> const* TC4ic_fc_cp = {};
 const TC4<const int, 1, const float, 1> *cT42ci_cf_p = {};
 // CHECK-MESSAGES: :[[@LINE-1]]:1: warning: wrong order of qualifiers
 // CHECK-MESSAGES: :[[@LINE-2]]:11: warning: wrong order of qualifiers
 // CHECK-MESSAGES: :[[@LINE-3]]:25: warning: wrong order of qualifiers
-// CHECK-FIXES: TC4<int const , 1, float const , 1> const *cT42ci_cf_p = {};
+// CHECK-FIXES: TC4<int const, 1, float const, 1> const *cT42ci_cf_p = {};
 TC4<const int, 2, const float, 2> const *TC4ci_cf_cp = {};
 // CHECK-MESSAGES: :[[@LINE-1]]:5: warning: wrong order of qualifiers
 // CHECK-MESSAGES: :[[@LINE-2]]:19: warning: wrong order of qualifiers
-// CHECK-FIXES: TC4<int const , 2, float const , 2> const *TC4ci_cf_cp = {};
+// CHECK-FIXES: TC4<int const, 2, float const, 2> const *TC4ci_cf_cp = {};
 
 
 // Casts
@@ -234,20 +234,20 @@ void casts(void* p) {
   (int const*)p;
   (const int*)p;
 // CHECK-MESSAGES: :[[@LINE-1]]:4: warning: wrong order of qualifiers
-// CHECK-FIXES: (int const *)p;
+// CHECK-FIXES: (int const*)p;
 
   static_cast<int const*>(p);
   static_cast<const int*>(p);
 // CHECK-MESSAGES: :[[@LINE-1]]:14: warning: wrong order of qualifiers
-// CHECK-FIXES: static_cast<int const *>(p);
+// CHECK-FIXES: static_cast<int const*>(p);
 
   reinterpret_cast<int const*>(p);
   reinterpret_cast<const int*>(p);
 // CHECK-MESSAGES: :[[@LINE-1]]:19: warning: wrong order of qualifiers
-// CHECK-FIXES: reinterpret_cast<int const *>(p);
+// CHECK-FIXES: reinterpret_cast<int const*>(p);
 
   const_cast<void const*>(p);
   const_cast<const void*>(p);
 // CHECK-MESSAGES: :[[@LINE-1]]:13: warning: wrong order of qualifiers
-// CHECK-FIXES: const_cast<void const *>(p);
+// CHECK-FIXES: const_cast<void const*>(p);
 }

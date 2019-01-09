@@ -362,9 +362,6 @@ void QualifiersOrder::checkQualifiers(const SourceManager &SM,
     return;
   }
 
-  // Skip whitespace and comments following const.
-  ConstR.setEnd(forwardSkipWhitespaceAndComments(SM, Context, ConstR.getEnd()));
-
   // Define insert location, respectively, left and right to the type.
   SourceLocation InsertLoc;
   SourceLocation MiddleLoc = LHS.getEnd();
@@ -381,9 +378,9 @@ void QualifiersOrder::checkQualifiers(const SourceManager &SM,
   case QAS_Right:
     MaybeAddSpaceBefore = true;
     InsertLoc = RHS.getBegin();
-    while (isWhitespace(*SM.getCharacterData(InsertLoc))) {
-      InsertLoc = InsertLoc.getLocWithOffset(1);
-    }
+    //while (isWhitespace(*SM.getCharacterData(InsertLoc))) {
+    //  InsertLoc = InsertLoc.getLocWithOffset(1);
+    //}
     assert(InsertLoc.isValid());
     if (!(ConstR.getBegin() < InsertLoc)) {
       // Already on the right side.

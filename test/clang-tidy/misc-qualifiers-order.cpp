@@ -14,12 +14,12 @@ int &ir = i;
 const   int /*const*/ cic_c = 0;
 /*const*/ int const   c_ic1 = 0;
 // CHECK-MESSAGES: :[[@LINE-1]]:11: warning: wrong order of qualifiers
-// CHECK-FIXES: /*const*/ const   int c_ic1 = 0;
+// CHECK-FIXES: /*const*/ const int   c_ic1 = 0;
 const int ci = 0;
 const int /**/ ci_ = 0;
 int const /**/ ic_ = 0;
 // CHECK-MESSAGES: :[[@LINE-1]]:1: warning: wrong order of qualifiers
-// CHECK-FIXES: const /**/ int ic_ = 0;
+// CHECK-FIXES: const int /**/ ic_ = 0;
 typedef int foo;
 const foo cf = 0;
 foo const fc = 0;
