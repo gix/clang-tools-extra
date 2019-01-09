@@ -142,6 +142,8 @@ TypeLoc getInnerPointeeLoc(TypeLoc TL, SourceLocation *SigilLoc = nullptr) {
         *SigilLoc = RTL.getSigilLoc();
     } else if (auto ATL = UTL.getAs<AttributedTypeLoc>()) {
       TL = ATL.getNextTypeLoc();
+    } else if (auto ATL = UTL.getAs<ArrayTypeLoc>()) {
+      TL = ATL.getNextTypeLoc();
     } else {
       return TL;
     }

@@ -35,6 +35,21 @@ auto const ac = 0;
 // CHECK-MESSAGES: :[[@LINE-1]]:1: warning: wrong order of qualifiers
 // CHECK-FIXES: const auto ac = 0;
 
+// Arrays
+const int constant_array_ci[1] = {0};
+int const constant_array_ic[1] = {0};
+// CHECK-MESSAGES: :[[@LINE-1]]:1: warning: wrong order of qualifiers
+// CHECK-FIXES: const int constant_array_ic[1] = {0};
+const int incomplete_array_ci[] = {0};
+int const incomplete_array_ic[] = {0};
+// CHECK-MESSAGES: :[[@LINE-1]]:1: warning: wrong order of qualifiers
+// CHECK-FIXES: const int incomplete_array_ic[] = {0};
+const int array_size = 1;
+const int dependent_sized_array_ci[array_size] = {0};
+int const dependent_sized_array_ic[array_size] = {0};
+// CHECK-MESSAGES: :[[@LINE-1]]:1: warning: wrong order of qualifiers
+// CHECK-FIXES: const int dependent_sized_array_ic[array_size] = {0};
+
 template <typename T>
 struct S {
   typedef int type;
