@@ -227,3 +227,27 @@ TC4<const int, 2, const float, 2> const *TC4ci_cf_cp = {};
 // CHECK-MESSAGES: :[[@LINE-1]]:5: warning: wrong order of qualifiers
 // CHECK-MESSAGES: :[[@LINE-2]]:19: warning: wrong order of qualifiers
 // CHECK-FIXES: TC4<int const , 2, float const , 2> const *TC4ci_cf_cp = {};
+
+
+// Casts
+void casts(void* p) {
+  (int const*)p;
+  (const int*)p;
+// CHECK-MESSAGES: :[[@LINE-1]]:4: warning: wrong order of qualifiers
+// CHECK-FIXES: (int const *)p;
+
+  static_cast<int const*>(p);
+  static_cast<const int*>(p);
+// CHECK-MESSAGES: :[[@LINE-1]]:14: warning: wrong order of qualifiers
+// CHECK-FIXES: static_cast<int const *>(p);
+
+  reinterpret_cast<int const*>(p);
+  reinterpret_cast<const int*>(p);
+// CHECK-MESSAGES: :[[@LINE-1]]:19: warning: wrong order of qualifiers
+// CHECK-FIXES: reinterpret_cast<int const *>(p);
+
+  const_cast<void const*>(p);
+  const_cast<const void*>(p);
+// CHECK-MESSAGES: :[[@LINE-1]]:13: warning: wrong order of qualifiers
+// CHECK-FIXES: const_cast<void const *>(p);
+}

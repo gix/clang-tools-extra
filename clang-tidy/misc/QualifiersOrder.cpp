@@ -237,6 +237,7 @@ void QualifiersOrder::registerMatchers(MatchFinder *Finder) {
   Finder->addMatcher(
       typeLoc(isTemplateSpecializationTypeLoc()).bind("template-spec-loc"),
       this);
+  Finder->addMatcher(explicitCastExpr().bind("explicit-cast"), this);
 }
 
 void QualifiersOrder::check(const MatchFinder::MatchResult &Result) {
@@ -320,6 +321,17 @@ void QualifiersOrder::check(const MatchFinder::MatchResult &Result) {
     TypeLoc TL = TAL.getTypeSourceInfo()->getTypeLoc();
     SourceLocation EndLoc = TSTL.getRAngleLoc();
     checkQualifiers(SM, Context, TL, SourceRange(StartLoc, EndLoc));
+  } else if (auto Cast =
+                 Result.Nodes.getNodeAs<ExplicitCastExpr>("explicit-cast")) {
+    SourceRange R;
+    if (auto CStyle = dyn_cast<CStyleCastExpr>(Cast)) {
+      R = {CStyle->getLParenLoc().getLocWithOffset(1),
+           CStyle->getRParenLoc().getLocWithOffset(-1)};
+    } else if (auto Named = dyn_cast<CXXNamedCastExpr>(Cast)) {
+      R = Named->getAngleBrackets();
+    } else
+      return;
+    checkQualifiers(SM, Context, Cast->getTypeInfoAsWritten()->getTypeLoc(), R);
   } else {
     llvm_unreachable("Invalid match");
   }
@@ -369,7 +381,7 @@ void QualifiersOrder::checkQualifiers(const SourceManager &SM,
   case QAS_Right:
     MaybeAddSpaceBefore = true;
     InsertLoc = RHS.getBegin();
-    while (isWhitespace(*FullSourceLoc(InsertLoc, SM).getCharacterData())) {
+    while (isWhitespace(*SM.getCharacterData(InsertLoc))) {
       InsertLoc = InsertLoc.getLocWithOffset(1);
     }
     assert(InsertLoc.isValid());
