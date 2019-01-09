@@ -251,3 +251,14 @@ void casts(void* p) {
 // CHECK-MESSAGES: :[[@LINE-1]]:13: warning: wrong order of qualifiers
 // CHECK-FIXES: const_cast<void const*>(p);
 }
+
+
+// Fields
+struct F
+{
+    int const ic = 0;
+    int const /**/ ic_ = 0;
+    const int /**/ ci_ = 0;
+// CHECK-MESSAGES: :[[@LINE-1]]:5: warning: wrong order of qualifiers
+// CHECK-FIXES: int const /**/ ic_ = 0;
+};

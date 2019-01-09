@@ -232,6 +232,7 @@ void QualifiersOrder::storeOptions(ClangTidyOptions::OptionMap &Opts) {
 
 void QualifiersOrder::registerMatchers(MatchFinder *Finder) {
   Finder->addMatcher(varDecl().bind("var"), this);
+  Finder->addMatcher(fieldDecl().bind("field"), this);
   Finder->addMatcher(functionDecl().bind("function"), this);
   Finder->addMatcher(typedefDecl().bind("typedef"), this);
   Finder->addMatcher(
@@ -250,6 +251,12 @@ void QualifiersOrder::check(const MatchFinder::MatchResult &Result) {
       return;
     checkQualifiers(SM, Context, TSI->getTypeLoc(),
                     SourceRange(Var->getOuterLocStart(), Var->getLocation()));
+  } else if (auto Field = Result.Nodes.getNodeAs<FieldDecl>("field")) {
+    TypeSourceInfo *TSI = Field->getTypeSourceInfo();
+    if (!TSI)
+      return;
+    checkQualifiers(SM, Context, TSI->getTypeLoc(),
+                    SourceRange(Field->getOuterLocStart(), Field->getLocation()));
   } else if (auto Fun = Result.Nodes.getNodeAs<FunctionDecl>("function")) {
     SourceRange R(Fun->getOuterLocStart(), Fun->getLocation());
     TypeSourceInfo *TSI = Fun->getTypeSourceInfo();
